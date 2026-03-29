@@ -35,7 +35,7 @@ public class TripStateService
 
     public async Task SaveAsync(TripState state)
     {
-        await _tableClient.UpsertEntityAsync(state);
+        await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace);
     }
 
     public async Task ResetAsync(long chatId, string tripName)
@@ -47,7 +47,7 @@ public class TripStateService
             SeenStatesJson = "[]",
             StartedAt = DateTimeOffset.UtcNow
         };
-        await _tableClient.UpsertEntityAsync(state);
+        await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace);
     }
 
     public List<string> DeserializeStates(string json) =>

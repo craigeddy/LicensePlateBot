@@ -1,6 +1,7 @@
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 public class BotCommandHandler
 {
@@ -101,14 +102,17 @@ public class BotCommandHandler
         return $"🚗 <b>New trip started: {tripName}</b>\n\nReady to collect all 50 states! Use /saw CA to log a plate.";
     }
 
-    private async Task<string> HandleSaw(long chatId, string[] args)
+    private async Task<string?> HandleSaw(long chatId, string[] args)
     {
         if (args.Length == 0)
         {
             var pending = await _stateService.GetOrCreateAsync(chatId);
             pending.PendingCommand = "saw";
             await _stateService.SaveAsync(pending);
-            return "Which state did you spot? Reply with the 2-letter abbreviation (e.g. CA, TX, NY).";
+            await _bot.SendMessage(chatId,
+                "Which state did you spot? Reply with the 2-letter abbreviation (e.g. CA, TX, NY).",
+                replyMarkup: new ForceReplyMarkup());
+            return null;
         }
 
         var abbr = args[0].ToUpper();
@@ -116,6 +120,7 @@ public class BotCommandHandler
             return $"❓ <b>{abbr}</b> isn't a recognized US state. Use a 2-letter abbreviation like CA, TX, NY.";
 
         var state = await _stateService.GetOrCreateAsync(chatId);
+        state.PendingCommand = null;
         var seen = _stateService.DeserializeStates(state.SeenStatesJson);
 
         if (seen.Contains(abbr, StringComparer.OrdinalIgnoreCase))
