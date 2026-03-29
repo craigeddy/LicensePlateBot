@@ -4,7 +4,7 @@ A Telegram bot for playing the license plate game on road trips. Track which US 
 
 ## Features
 
-- `/saw CA` — log a state you spotted (tap `/saw` with no argument and the bot will prompt you)
+- `/saw CA` or `/saw California` — log a state you spotted by abbreviation or full name (tap `/saw` with no argument and the bot will prompt you)
 - `/status` — see your progress with a visual progress bar
 - `/missing` — see which states you still need
 - `/undo` — remove the last logged state
@@ -195,7 +195,7 @@ Paste:
 
 ```
 newtrip - Start a new trip (clears previous state)
-saw - Log a state plate you spotted e.g. /saw CA
+saw - Log a state plate you spotted e.g. /saw CA or /saw California
 status - See your current progress
 missing - See which states you still need
 undo - Remove the last logged state
@@ -220,7 +220,7 @@ Both you and your chat partner can now send commands and see each other's update
 | Command | Description | Example |
 |---|---|---|
 | `/newtrip [name]` | Start a fresh trip, clears all state | `/newtrip Colorado 2026` |
-| `/saw [state]` | Log a state you spotted; omit the abbreviation and the bot will prompt you | `/saw CA` |
+| `/saw [state]` | Log a state you spotted by abbreviation or full name; omit the state and the bot will prompt you | `/saw CA` or `/saw California` |
 | `/status` | Show progress and states found so far | `/status` |
 | `/missing` | List states not yet found | `/missing` |
 | `/undo` | Remove the last logged state | `/undo` |
