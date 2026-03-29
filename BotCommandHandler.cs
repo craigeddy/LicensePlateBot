@@ -32,6 +32,9 @@ public class BotCommandHandler
         {"VA","Virginia"},{"WA","Washington"},{"WV","West Virginia"},{"WI","Wisconsin"},{"WY","Wyoming"}
     };
 
+    private static readonly Dictionary<string, string> StateNameToAbbr =
+        StateNames.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.OrdinalIgnoreCase);
+
     public BotCommandHandler(ITelegramBotClient bot, TripStateService stateService)
     {
         _bot = bot;
@@ -110,14 +113,19 @@ public class BotCommandHandler
             pending.PendingCommand = "saw";
             await _stateService.SaveAsync(pending);
             await _bot.SendMessage(chatId,
-                "Which state did you spot? Reply with the 2-letter abbreviation (e.g. CA, TX, NY).",
+                "Which state did you spot? Reply with the 2-letter abbreviation or full name (e.g. CA, TX, California).",
                 replyMarkup: new ForceReplyMarkup());
             return null;
         }
 
-        var abbr = args[0].ToUpper();
-        if (!AllStates.Contains(abbr))
-            return $"❓ <b>{abbr}</b> isn't a recognized US state. Use a 2-letter abbreviation like CA, TX, NY.";
+        var input = string.Join(" ", args);
+        string abbr;
+        if (AllStates.Contains(input))
+            abbr = input.ToUpper();
+        else if (StateNameToAbbr.TryGetValue(input, out var matched))
+            abbr = matched;
+        else
+            return $"❓ <b>{input}</b> isn't a recognized US state. Use a 2-letter abbreviation (CA) or full name (California).";
 
         var state = await _stateService.GetOrCreateAsync(chatId);
         state.PendingCommand = null;
@@ -188,7 +196,7 @@ public class BotCommandHandler
     private static string GetHelp() =>
         "<b>License Plate Game 🚗</b>\n\n" +
         "/newtrip [name] — start a fresh trip\n" +
-        "/saw CA — log a state you spotted\n" +
+        "/saw CA — log a state you spotted (abbreviation or full name)\n" +
         "/status — see your progress\n" +
         "/missing — see what's left\n" +
         "/undo — remove the last logged state\n" +
