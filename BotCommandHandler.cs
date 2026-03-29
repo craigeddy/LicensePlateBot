@@ -44,19 +44,51 @@ public class BotCommandHandler
 
         var chatId = message.Chat.Id;
         var parts = text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var isCommand = parts[0].StartsWith('/');
         var command = parts[0].ToLower().TrimEnd('@'); // handle /cmd@botname format
         var args = parts.Skip(1).ToArray();
 
-        var reply = command switch
+        string? reply;
+
+        if (isCommand)
         {
-            "/newtrip" or "/start" => await HandleNewTrip(chatId, args),
-            "/saw"                 => await HandleSaw(chatId, args),
-            "/status"              => await HandleStatus(chatId),
-            "/missing"             => await HandleMissing(chatId),
-            "/undo"                => await HandleUndo(chatId),
-            "/help"                => GetHelp(),
-            _                      => null
-        };
+            // Clear any pending conversational state when a new command arrives
+            if (command != "/saw")
+            {
+                var s = await _stateService.GetOrCreateAsync(chatId);
+                if (s.PendingCommand is not null)
+                {
+                    s.PendingCommand = null;
+                    await _stateService.SaveAsync(s);
+                }
+            }
+
+            reply = command switch
+            {
+                "/newtrip" or "/start" => await HandleNewTrip(chatId, args),
+                "/saw"                 => await HandleSaw(chatId, args),
+                "/status"              => await HandleStatus(chatId),
+                "/missing"             => await HandleMissing(chatId),
+                "/undo"                => await HandleUndo(chatId),
+                "/help"                => GetHelp(),
+                _                      => null
+            };
+        }
+        else
+        {
+            // Non-command message — check for pending conversational state
+            var state = await _stateService.GetOrCreateAsync(chatId);
+            if (state.PendingCommand == "saw")
+            {
+                state.PendingCommand = null;
+                await _stateService.SaveAsync(state);
+                reply = await HandleSaw(chatId, parts);
+            }
+            else
+            {
+                reply = null;
+            }
+        }
 
         if (reply is not null)
             await _bot.SendMessage(chatId, reply, parseMode: ParseMode.Html);
@@ -72,7 +104,12 @@ public class BotCommandHandler
     private async Task<string> HandleSaw(long chatId, string[] args)
     {
         if (args.Length == 0)
-            return "Usage: /saw CA  (use the 2-letter state abbreviation)";
+        {
+            var pending = await _stateService.GetOrCreateAsync(chatId);
+            pending.PendingCommand = "saw";
+            await _stateService.SaveAsync(pending);
+            return "Which state did you spot? Reply with the 2-letter abbreviation (e.g. CA, TX, NY).";
+        }
 
         var abbr = args[0].ToUpper();
         if (!AllStates.Contains(abbr))
