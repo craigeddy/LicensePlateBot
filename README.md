@@ -159,6 +159,8 @@ az functionapp config appsettings set \
 
 ### 4. Deploy
 
+Deployment happens automatically via GitHub Actions when you push to `main` (see [CI/CD](#cicd) below). To deploy manually:
+
 ```bash
 func azure functionapp publish func-licenseplate-bot
 ```
@@ -180,6 +182,25 @@ Copy the `default` key value.
 curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook" \
   -d "url=https://func-licenseplate-bot.azurewebsites.net/api/telegram?code=<FUNCTION_KEY>"
 ```
+
+---
+
+## CI/CD
+
+A GitHub Actions workflow (`.github/workflows/ci-cd.yml`) runs on every pull request to `main` and every push to `main`.
+
+| Event | Jobs run |
+|---|---|
+| Pull request to `main` | Build only |
+| Push to `main` | Build + deploy to Azure Functions |
+
+### Required secret
+
+Add the Azure Function publish profile as a repository secret named `AZURE_FUNCTIONAPP_PUBLISH_PROFILE`:
+
+1. Azure Portal → Function App `func-licenseplate-bot` → **Overview** → **Get publish profile** — download the file
+2. GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+3. Name: `AZURE_FUNCTIONAPP_PUBLISH_PROFILE`, value: paste the contents of the downloaded file
 
 ---
 
@@ -232,6 +253,9 @@ Both you and your chat partner can now send commands and see each other's update
 
 ```
 LicensePlateBot/
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml        # GitHub Actions CI/CD pipeline
 ├── LicensePlateBot.csproj   # Project file and NuGet dependencies
 ├── host.json                # Azure Functions host configuration
 ├── local.settings.json      # Local dev secrets (gitignored)
