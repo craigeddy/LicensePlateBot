@@ -73,6 +73,10 @@ Local values live in `local.settings.json` (gitignored). Production values are s
 3. Add the command to the BotFather command list (see README)
 4. If the command needs conversational input, set `PendingCommand` and handle the follow-up in the non-slash branch of `HandleUpdateAsync`
 
+## Before Declaring Done
+
+Always run `dotnet build` and confirm it succeeds (0 errors) before declaring a code change complete.
+
 ## Testing
 
 No automated tests currently. Test manually via Telegram with ngrok running locally. Key scenarios to verify after any change:
