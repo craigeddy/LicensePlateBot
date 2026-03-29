@@ -77,6 +77,8 @@ Local values live in `local.settings.json` (gitignored). Production values are s
 
 Always run `dotnet build` and confirm it succeeds (0 errors) before declaring a code change complete.
 
+Always update `README.md` if the change affects user-facing behavior, commands, or examples.
+
 ## Testing
 
 No automated tests currently. Test manually via Telegram with ngrok running locally. Key scenarios to verify after any change:
