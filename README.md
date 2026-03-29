@@ -183,18 +183,9 @@ curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook" \
 
 ---
 
-## Adding the Bot to a Telegram Chat
+## Set Up the Command Menu
 
-1. Open the group chat in Telegram
-2. Tap the group name → **Add Members**
-3. Search for your bot by its username (e.g. `@YourLicensePlateBot`)
-4. Add it to the chat
-
-Both you and your chat partner can now send commands and see each other's updates in real time.
-
-### Set up the command menu (optional but recommended)
-
-Message [@BotFather](https://t.me/BotFather):
+This enables the `/` command popup in Telegram so you can tap commands instead of typing them. Message [@BotFather](https://t.me/BotFather):
 
 ```
 /mybots → select your bot → Edit Bot → Edit Commands
@@ -211,7 +202,16 @@ undo - Remove the last logged state
 help - Show all commands
 ```
 
-This enables the `/` command popup in Telegram so you can tap commands instead of typing them.
+---
+
+## Adding the Bot to a Telegram Chat
+
+1. Open the group chat in Telegram
+2. Tap the group name → **Add Members**
+3. Search for your bot by its username (e.g. `@YourLicensePlateBot`)
+4. Add it to the chat
+
+Both you and your chat partner can now send commands and see each other's updates in real time.
 
 ---
 
