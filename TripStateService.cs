@@ -45,7 +45,7 @@ public class TripStateService
         {
             var response = await _tableClient.GetEntityAsync<TripState>(chatId.ToString(), "currentTrip");
             var existing = response.Value;
-            if (existing.SeenStatesJson != "[]")
+            if (DeserializeStates(existing.SeenStatesJson).Count > 0)
             {
                 var archived = new TripState
                 {

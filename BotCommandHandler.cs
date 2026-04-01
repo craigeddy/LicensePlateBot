@@ -200,11 +200,12 @@ public class BotCommandHandler
         if (history.Count == 0)
             return "No previous trips yet. Start a new trip with /newtrip!";
 
-        var lines = history.Select((t, i) =>
+        var lines = history.Take(25).Select((t, i) =>
         {
             var seen = _stateService.DeserializeStates(t.SeenStatesJson);
             var date = t.StartedAt.ToString("MMM d, yyyy");
-            return $"{i + 1}. <b>{t.TripName}</b> ({date}) — {seen.Count}/50 states";
+            var name = System.Net.WebUtility.HtmlEncode(t.TripName);
+            return $"{i + 1}. <b>{name}</b> ({date}) — {seen.Count}/50 states";
         });
 
         return "📋 <b>Trip History</b>\n\n" + string.Join("\n", lines);
