@@ -74,6 +74,7 @@ public class BotCommandHandler
                 "/status"              => await HandleStatus(chatId),
                 "/missing"             => await HandleMissing(chatId),
                 "/undo"                => await HandleUndo(chatId),
+                "/history"             => await HandleHistory(chatId),
                 "/help"                => GetHelp(),
                 _                      => null
             };
@@ -193,6 +194,22 @@ public class BotCommandHandler
         return $"↩️ Removed <b>{StateNames[removed]}</b> ({removed}). Back to {seen.Count}/50.";
     }
 
+    private async Task<string> HandleHistory(long chatId)
+    {
+        var history = await _stateService.GetHistoryAsync(chatId);
+        if (history.Count == 0)
+            return "No previous trips yet. Start a new trip with /newtrip!";
+
+        var lines = history.Select((t, i) =>
+        {
+            var seen = _stateService.DeserializeStates(t.SeenStatesJson);
+            var date = t.StartedAt.ToString("MMM d, yyyy");
+            return $"{i + 1}. <b>{t.TripName}</b> ({date}) — {seen.Count}/50 states";
+        });
+
+        return "📋 <b>Trip History</b>\n\n" + string.Join("\n", lines);
+    }
+
     private static string GetHelp() =>
         "<b>License Plate Game 🚗</b>\n\n" +
         "/newtrip [name] — start a fresh trip\n" +
@@ -200,6 +217,7 @@ public class BotCommandHandler
         "/status — see your progress\n" +
         "/missing — see what's left\n" +
         "/undo — remove the last logged state\n" +
+        "/history — view results from previous trips\n" +
         "/help — show this message";
 
     private static string BuildProgressBar(int current, int total)

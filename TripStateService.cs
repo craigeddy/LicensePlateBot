@@ -40,6 +40,27 @@ public class TripStateService
 
     public async Task ResetAsync(long chatId, string tripName)
     {
+        // Archive current trip if it has any states logged
+        try
+        {
+            var response = await _tableClient.GetEntityAsync<TripState>(chatId.ToString(), "currentTrip");
+            var existing = response.Value;
+            if (existing.SeenStatesJson != "[]")
+            {
+                var archived = new TripState
+                {
+                    PartitionKey = chatId.ToString(),
+                    RowKey = $"trip_{existing.StartedAt:yyyyMMddHHmmss}",
+                    TripName = existing.TripName,
+                    SeenStatesJson = existing.SeenStatesJson,
+                    StartedAt = existing.StartedAt,
+                    EndedAt = DateTimeOffset.UtcNow
+                };
+                await _tableClient.UpsertEntityAsync(archived, TableUpdateMode.Replace);
+            }
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404) { }
+
         var state = new TripState
         {
             PartitionKey = chatId.ToString(),
@@ -48,6 +69,20 @@ public class TripStateService
             StartedAt = DateTimeOffset.UtcNow
         };
         await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace);
+    }
+
+    public async Task<List<TripState>> GetHistoryAsync(long chatId)
+    {
+        var partitionKey = chatId.ToString();
+        var history = new List<TripState>();
+
+        var query = _tableClient.QueryAsync<TripState>(
+            filter: $"PartitionKey eq '{partitionKey}' and RowKey ne 'currentTrip'");
+
+        await foreach (var entity in query)
+            history.Add(entity);
+
+        return history.OrderByDescending(t => t.StartedAt).ToList();
     }
 
     public List<string> DeserializeStates(string json) =>
