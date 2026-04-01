@@ -34,7 +34,7 @@ jobs:
 
       - name: Publish
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: dotnet publish --no-build --configuration Release --output ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        run: dotnet publish --configuration Release --output ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Upload artifact
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
