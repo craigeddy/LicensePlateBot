@@ -8,7 +8,8 @@ A Telegram bot for playing the license plate game on road trips. Track which US 
 - `/status` — see your progress with a visual progress bar
 - `/missing` — see which states you still need
 - `/undo` — remove the last logged state
-- `/newtrip` — start fresh for a new trip
+- `/newtrip` — start fresh for a new trip (previous trip is saved automatically)
+- `/history` — view results from all previous trips in this chat
 
 State is stored per Telegram chat, so any member of a group chat can log plates and everyone sees the updates in real time.
 
@@ -215,11 +216,12 @@ This enables the `/` command popup in Telegram so you can tap commands instead o
 Paste:
 
 ```
-newtrip - Start a new trip (clears previous state)
+newtrip - Start a new trip (previous trip is saved to history)
 saw - Log a state plate you spotted e.g. /saw CA or /saw California
 status - See your current progress
 missing - See which states you still need
 undo - Remove the last logged state
+history - View results from previous trips
 help - Show all commands
 ```
 
@@ -240,11 +242,12 @@ Both you and your chat partner can now send commands and see each other's update
 
 | Command | Description | Example |
 |---|---|---|
-| `/newtrip [name]` | Start a fresh trip, clears all state | `/newtrip Colorado 2026` |
+| `/newtrip [name]` | Start a fresh trip; current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
 | `/saw [state]` | Log a state you spotted by abbreviation or full name; omit the state and the bot will prompt you | `/saw CA` or `/saw California` |
 | `/status` | Show progress and states found so far | `/status` |
 | `/missing` | List states not yet found | `/missing` |
 | `/undo` | Remove the last logged state | `/undo` |
+| `/history` | Show results from all previous trips in this chat | `/history` |
 | `/help` | Show command reference | `/help` |
 
 ---
