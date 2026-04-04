@@ -205,25 +205,11 @@ Add the Azure Function publish profile as a repository secret named `AZURE_FUNCT
 
 ---
 
-## Set Up the Command Menu
+## Command Menu
 
-This enables the `/` command popup in Telegram so you can tap commands instead of typing them. Message [@BotFather](https://t.me/BotFather):
+The bot registers its command list with BotFather automatically on every startup, so the `/` command popup in Telegram stays in sync without any manual steps.
 
-```
-/mybots → select your bot → Edit Bot → Edit Commands
-```
-
-Paste:
-
-```
-newtrip - Start a new trip (previous trip is saved to history)
-saw - Log a state plate you spotted e.g. /saw CA or /saw California
-status - See your current progress
-missing - See which states you still need
-undo - Remove the last logged state
-history - View results from previous trips
-help - Show all commands
-```
+To add a new command, add an entry to the `Commands` array in `BotCommandHandler.cs` — it will be registered on the next deploy.
 
 ---
 
@@ -242,11 +228,11 @@ Both you and your chat partner can now send commands and see each other's update
 
 | Command | Description | Example |
 |---|---|---|
-| `/newtrip [name]` | Start a fresh trip; current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
 | `/saw [state]` | Log a state you spotted by abbreviation or full name; omit the state and the bot will prompt you | `/saw CA` or `/saw California` |
 | `/status` | Show progress and states found so far | `/status` |
 | `/missing` | List states not yet found | `/missing` |
 | `/undo` | Remove the last logged state | `/undo` |
+| `/newtrip [name]` | Start a fresh trip; current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
 | `/history` | Show results from all previous trips in this chat | `/history` |
 | `/help` | Show command reference | `/help` |
 
