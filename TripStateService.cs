@@ -45,7 +45,7 @@ public class TripStateService
         {
             var response = await _tableClient.GetEntityAsync<TripState>(chatId.ToString(), "currentTrip");
             var existing = response.Value;
-            if (DeserializeStates(existing.SeenStatesJson).Count > 0)
+            if (DeserializeSightings(existing.SeenStatesJson).Count > 0)
             {
                 var archived = new TripState
                 {
@@ -85,9 +85,20 @@ public class TripStateService
         return history.OrderByDescending(t => t.StartedAt).ToList();
     }
 
-    public List<string> DeserializeStates(string json) =>
-        JsonSerializer.Deserialize<List<string>>(json) ?? [];
+    public List<SightingRecord> DeserializeSightings(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<SightingRecord>>(json) ?? [];
+        }
+        catch
+        {
+            // Legacy format: plain JSON array of state abbreviation strings
+            var states = JsonSerializer.Deserialize<List<string>>(json) ?? [];
+            return states.Select(s => new SightingRecord(s, 0, string.Empty)).ToList();
+        }
+    }
 
-    public string SerializeStates(List<string> states) =>
-        JsonSerializer.Serialize(states);
+    public string SerializeSightings(List<SightingRecord> sightings) =>
+        JsonSerializer.Serialize(sightings);
 }
