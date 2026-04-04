@@ -35,6 +35,17 @@ public class BotCommandHandler
     private static readonly Dictionary<string, string> StateNameToAbbr =
         StateNames.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.OrdinalIgnoreCase);
 
+    public static readonly Telegram.Bot.Types.BotCommand[] Commands =
+    [
+        new() { Command = "saw",      Description = "Log a state you spotted (e.g. /saw CA)" },
+        new() { Command = "status",   Description = "See your current progress" },
+        new() { Command = "missing",  Description = "See which states are still needed" },
+        new() { Command = "undo",     Description = "Remove the last logged state" },
+        new() { Command = "newtrip",  Description = "Start a fresh trip" },
+        new() { Command = "history",  Description = "View results from previous trips" },
+        new() { Command = "help",     Description = "Show available commands" },
+    ];
+
     public BotCommandHandler(ITelegramBotClient bot, TripStateService stateService)
     {
         _bot = bot;
@@ -213,11 +224,11 @@ public class BotCommandHandler
 
     private static string GetHelp() =>
         "<b>License Plate Game 🚗</b>\n\n" +
-        "/newtrip [name] — start a fresh trip\n" +
         "/saw CA — log a state you spotted (abbreviation or full name)\n" +
         "/status — see your progress\n" +
         "/missing — see what's left\n" +
         "/undo — remove the last logged state\n" +
+        "/newtrip [name] — start a fresh trip\n" +
         "/history — view results from previous trips\n" +
         "/help — show this message";
 
