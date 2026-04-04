@@ -35,6 +35,9 @@ public class BotCommandHandler
     private static readonly Dictionary<string, string> StateNameToAbbr =
         StateNames.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.OrdinalIgnoreCase);
 
+    // Canonical command list registered with BotFather on startup.
+    // /start is intentionally omitted — it is an internal alias for /newtrip
+    // required by Telegram for new users, not a user-facing command.
     public static readonly Telegram.Bot.Types.BotCommand[] Commands =
     [
         new() { Command = "saw",      Description = "Log a state you spotted (e.g. /saw CA)" },
