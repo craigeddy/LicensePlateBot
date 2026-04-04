@@ -1,3 +1,4 @@
+using LicensePlateBot.Models;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -84,7 +85,7 @@ public class BotCommandHandler
             reply = command switch
             {
                 "/newtrip" or "/start" => await HandleNewTrip(chatId, args),
-                "/saw"                 => await HandleSaw(chatId, args),
+                "/saw"                 => await HandleSaw(chatId, args, message.From),
                 "/status"              => await HandleStatus(chatId),
                 "/missing"             => await HandleMissing(chatId),
                 "/undo"                => await HandleUndo(chatId),
@@ -101,7 +102,7 @@ public class BotCommandHandler
             {
                 state.PendingCommand = null;
                 await _stateService.SaveAsync(state);
-                reply = await HandleSaw(chatId, parts);
+                reply = await HandleSaw(chatId, parts, message.From);
             }
             else
             {
@@ -120,7 +121,7 @@ public class BotCommandHandler
         return $"🚗 <b>New trip started: {tripName}</b>\n\nReady to collect all 50 states! Use /saw CA to log a plate.";
     }
 
-    private async Task<string?> HandleSaw(long chatId, string[] args)
+    private async Task<string?> HandleSaw(long chatId, string[] args, Telegram.Bot.Types.User? from)
     {
         if (args.Length == 0)
         {
@@ -144,68 +145,94 @@ public class BotCommandHandler
 
         var state = await _stateService.GetOrCreateAsync(chatId);
         state.PendingCommand = null;
-        var seen = _stateService.DeserializeStates(state.SeenStatesJson);
+        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
 
-        if (seen.Contains(abbr, StringComparer.OrdinalIgnoreCase))
-            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr})! That's {seen.Count}/50.";
+        var existing = sightings.FirstOrDefault(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {name}" : "";
+            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/50.";
+        }
 
-        seen.Add(abbr);
-        state.SeenStatesJson = _stateService.SerializeStates(seen);
+        var displayName = DisplayName(from);
+        sightings.Add(new SightingRecord(abbr, from?.Id ?? 0, displayName));
+        state.SeenStatesJson = _stateService.SerializeSightings(sightings);
         await _stateService.SaveAsync(state);
 
-        var remaining = 50 - seen.Count;
-        var congrats = seen.Count == 50 ? "\n\n🎉 <b>YOU GOT ALL 50!</b> 🎉" : "";
-        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted!\n{seen.Count}/50 states found — {remaining} to go.{congrats}";
+        var remaining = 50 - sightings.Count;
+        var credit = displayName is { Length: > 0 } ? $" by {displayName}" : "";
+        var congrats = sightings.Count == 50 ? "\n\n🎉 <b>YOU GOT ALL 50!</b> 🎉" : "";
+        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/50 states found — {remaining} to go.{congrats}";
+    }
+
+    private static string DisplayName(Telegram.Bot.Types.User? user)
+    {
+        if (user is null) return string.Empty;
+        var name = $"{user.FirstName} {user.LastName}".Trim();
+        return name.Length > 0 ? name : user.Username ?? string.Empty;
     }
 
     private async Task<string> HandleStatus(long chatId)
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
-        var seen = _stateService.DeserializeStates(state.SeenStatesJson);
+        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
 
-        if (seen.Count == 0)
+        if (sightings.Count == 0)
             return "No plates logged yet! Use /saw CA to log your first one.";
 
-        var sorted = seen.OrderBy(s => s).ToList();
-        var stateList = string.Join(", ", sorted.Select(s => $"{s}"));
-        var bar = BuildProgressBar(seen.Count, 50);
+        var stateList = string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s));
+        var bar = BuildProgressBar(sightings.Count, 50);
 
-        return $"🗺 <b>{state.TripName}</b>\n" +
-               $"{bar} {seen.Count}/50\n\n" +
-               $"<b>Found:</b> {stateList}";
+        var result = $"🗺 <b>{System.Net.WebUtility.HtmlEncode(state.TripName)}</b>\n" +
+                     $"{bar} {sightings.Count}/50\n\n" +
+                     $"<b>Found:</b> {stateList}";
+
+        var leaderboard = sightings
+            .Where(s => s.UserId != 0 && s.UserName.Length > 0)
+            .GroupBy(s => s.UserId)
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{System.Net.WebUtility.HtmlEncode(g.First().UserName)} — {g.Count()}")
+            .ToList();
+
+        if (leaderboard.Count > 0)
+            result += "\n\n<b>Leaderboard:</b>\n" +
+                      string.Join("\n", leaderboard.Select((line, i) => $"{i + 1}. {line}"));
+
+        return result;
     }
 
     private async Task<string> HandleMissing(long chatId)
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
-        var seen = _stateService.DeserializeStates(state.SeenStatesJson);
+        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
+        var seenAbbrs = sightings.Select(s => s.State).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var missing = AllStates
-            .Where(s => !seen.Contains(s, StringComparer.OrdinalIgnoreCase))
+            .Where(s => !seenAbbrs.Contains(s))
             .OrderBy(s => s)
             .ToList();
 
         if (missing.Count == 0)
             return "🎉 You've found all 50 states! Nothing missing!";
 
-        var list = string.Join(", ", missing.Select(s => $"{s}"));
+        var list = string.Join(", ", missing);
         return $"🔍 <b>{missing.Count} states still needed:</b>\n{list}";
     }
 
     private async Task<string> HandleUndo(long chatId)
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
-        var seen = _stateService.DeserializeStates(state.SeenStatesJson);
+        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
 
-        if (seen.Count == 0)
+        if (sightings.Count == 0)
             return "Nothing to undo — no states logged yet.";
 
-        var removed = seen[^1];
-        seen.RemoveAt(seen.Count - 1);
-        state.SeenStatesJson = _stateService.SerializeStates(seen);
+        var removed = sightings[^1];
+        sightings.RemoveAt(sightings.Count - 1);
+        state.SeenStatesJson = _stateService.SerializeSightings(sightings);
         await _stateService.SaveAsync(state);
 
-        return $"↩️ Removed <b>{StateNames[removed]}</b> ({removed}). Back to {seen.Count}/50.";
+        return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/50.";
     }
 
     private async Task<string> HandleHistory(long chatId)
@@ -216,10 +243,17 @@ public class BotCommandHandler
 
         var lines = history.Take(25).Select((t, i) =>
         {
-            var seen = _stateService.DeserializeStates(t.SeenStatesJson);
+            var sightings = _stateService.DeserializeSightings(t.SeenStatesJson);
             var date = t.StartedAt.ToString("MMM d, yyyy");
             var name = System.Net.WebUtility.HtmlEncode(t.TripName);
-            return $"{i + 1}. <b>{name}</b> ({date}) — {seen.Count}/50 states";
+            var topSpotter = sightings
+                .Where(s => s.UserId != 0 && s.UserName.Length > 0)
+                .GroupBy(s => s.UserId)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.First().UserName)
+                .FirstOrDefault();
+            var mvp = topSpotter is not null ? $" 🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "";
+            return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/50 states{mvp}";
         });
 
         return "📋 <b>Trip History</b>\n\n" + string.Join("\n", lines);

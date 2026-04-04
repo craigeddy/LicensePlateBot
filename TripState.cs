@@ -3,6 +3,8 @@ using Azure.Data.Tables;
 
 namespace LicensePlateBot.Models;
 
+public record SightingRecord(string State, long UserId, string UserName);
+
 public class TripState : ITableEntity
 {
     // PartitionKey = chat ID, RowKey = "currentTrip" for active trip or "trip_<yyyyMMddHHmmss>" for archived trips
