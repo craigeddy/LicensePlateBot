@@ -73,6 +73,14 @@ Local values live in `local.settings.json` (gitignored). Production values are s
 3. Add the command to the BotFather command list (see README)
 4. If the command needs conversational input, set `PendingCommand` and handle the follow-up in the non-slash branch of `HandleUpdateAsync`
 
+## Branching
+
+Always create a feature branch before making any code changes. Never commit directly to `main`. Create the branch first, then make changes:
+
+```bash
+git checkout -b <feature-branch-name>
+```
+
 ## Commits
 
 Always attribute commits to Claude using the `--author` flag:
