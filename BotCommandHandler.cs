@@ -72,7 +72,7 @@ public class BotCommandHandler
         if (isCommand)
         {
             // Clear any pending conversational state when a new command arrives
-            if (command != "/saw" && command != "/newtrip" && command != "/start")
+            if (command != "/saw")
             {
                 var s = await _stateService.GetOrCreateAsync(chatId);
                 if (s.PendingCommand is not null)
@@ -104,7 +104,7 @@ public class BotCommandHandler
                 await _stateService.SaveAsync(state);
                 reply = await HandleSaw(chatId, parts, message.From);
             }
-            else if (state.PendingCommand is { } pc && pc.StartsWith("newtrip:"))
+            else if (state.PendingCommand is { } pc && pc.StartsWith("newtrip:", StringComparison.Ordinal))
             {
                 var pendingDefault = pc["newtrip:".Length..];
                 state.PendingCommand = null;
@@ -125,7 +125,7 @@ public class BotCommandHandler
     {
         if (args.Length == 0)
         {
-            var defaultName = $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}";
+            var defaultName = $"Road Trip {DateTime.UtcNow.ToString("MM/dd/yyyy", System.Globalization.CultureInfo.InvariantCulture)}";
             var pending = await _stateService.GetOrCreateAsync(chatId);
             pending.PendingCommand = $"newtrip:{defaultName}";
             await _stateService.SaveAsync(pending);
