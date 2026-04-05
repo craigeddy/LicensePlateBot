@@ -104,11 +104,12 @@ public class BotCommandHandler
                 await _stateService.SaveAsync(state);
                 reply = await HandleSaw(chatId, parts, message.From);
             }
-            else if (state.PendingCommand == "newtrip")
+            else if (state.PendingCommand is { } pc && pc.StartsWith("newtrip:"))
             {
+                var pendingDefault = pc["newtrip:".Length..];
                 state.PendingCommand = null;
                 await _stateService.SaveAsync(state);
-                reply = await HandleNewTrip(chatId, parts);
+                reply = await HandleNewTrip(chatId, parts, pendingDefault);
             }
             else
             {
@@ -120,14 +121,14 @@ public class BotCommandHandler
             await _bot.SendMessage(chatId, reply, parseMode: ParseMode.Html);
     }
 
-    private async Task<string?> HandleNewTrip(long chatId, string[] args)
+    private async Task<string?> HandleNewTrip(long chatId, string[] args, string? pendingDefault = null)
     {
         if (args.Length == 0)
         {
-            var pending = await _stateService.GetOrCreateAsync(chatId);
-            pending.PendingCommand = "newtrip";
-            await _stateService.SaveAsync(pending);
             var defaultName = $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}";
+            var pending = await _stateService.GetOrCreateAsync(chatId);
+            pending.PendingCommand = $"newtrip:{defaultName}";
+            await _stateService.SaveAsync(pending);
             await _bot.SendMessage(chatId,
                 $"What would you like to name this trip? Reply with a name, or send <b>skip</b> to use \"{defaultName}\".",
                 parseMode: ParseMode.Html,
@@ -136,10 +137,10 @@ public class BotCommandHandler
         }
 
         var tripName = string.Join(" ", args).Equals("skip", StringComparison.OrdinalIgnoreCase)
-            ? $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}"
+            ? (pendingDefault ?? $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}")
             : string.Join(" ", args);
         await _stateService.ResetAsync(chatId, tripName);
-        return $"🚗 <b>New trip started: {tripName}</b>\n\nReady to collect all 50 states! Use /saw CA to log a plate.";
+        return $"🚗 <b>New trip started: {System.Net.WebUtility.HtmlEncode(tripName)}</b>\n\nReady to collect all 50 states! Use /saw CA to log a plate.";
     }
 
     private async Task<string?> HandleSaw(long chatId, string[] args, Telegram.Bot.Types.User? from)
