@@ -73,6 +73,16 @@ Local values live in `local.settings.json` (gitignored). Production values are s
 3. Add the command to the BotFather command list (see README)
 4. If the command needs conversational input, set `PendingCommand` and handle the follow-up in the non-slash branch of `HandleUpdateAsync`
 
+## Commits
+
+Always attribute commits to Claude using the `--author` flag:
+
+```bash
+git commit --author="Claude Sonnet 4.6 <noreply@anthropic.com>" -m "..."
+```
+
+Always include a `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>` trailer in the commit message body as well.
+
 ## Before Declaring Done
 
 Always run `dotnet build` and confirm it succeeds (0 errors) before declaring a code change complete.
