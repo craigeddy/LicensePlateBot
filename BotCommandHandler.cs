@@ -72,7 +72,7 @@ public class BotCommandHandler
         if (isCommand)
         {
             // Clear any pending conversational state when a new command arrives
-            if (command != "/saw")
+            if (command != "/saw" && command != "/newtrip" && command != "/start")
             {
                 var s = await _stateService.GetOrCreateAsync(chatId);
                 if (s.PendingCommand is not null)
@@ -104,6 +104,12 @@ public class BotCommandHandler
                 await _stateService.SaveAsync(state);
                 reply = await HandleSaw(chatId, parts, message.From);
             }
+            else if (state.PendingCommand == "newtrip")
+            {
+                state.PendingCommand = null;
+                await _stateService.SaveAsync(state);
+                reply = await HandleNewTrip(chatId, parts);
+            }
             else
             {
                 reply = null;
@@ -114,9 +120,24 @@ public class BotCommandHandler
             await _bot.SendMessage(chatId, reply, parseMode: ParseMode.Html);
     }
 
-    private async Task<string> HandleNewTrip(long chatId, string[] args)
+    private async Task<string?> HandleNewTrip(long chatId, string[] args)
     {
-        var tripName = args.Length > 0 ? string.Join(" ", args) : "Road Trip";
+        if (args.Length == 0)
+        {
+            var pending = await _stateService.GetOrCreateAsync(chatId);
+            pending.PendingCommand = "newtrip";
+            await _stateService.SaveAsync(pending);
+            var defaultName = $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}";
+            await _bot.SendMessage(chatId,
+                $"What would you like to name this trip? Reply with a name, or send <b>skip</b> to use \"{defaultName}\".",
+                parseMode: ParseMode.Html,
+                replyMarkup: new ForceReplyMarkup());
+            return null;
+        }
+
+        var tripName = string.Join(" ", args).Equals("skip", StringComparison.OrdinalIgnoreCase)
+            ? $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}"
+            : string.Join(" ", args);
         await _stateService.ResetAsync(chatId, tripName);
         return $"🚗 <b>New trip started: {tripName}</b>\n\nReady to collect all 50 states! Use /saw CA to log a plate.";
     }

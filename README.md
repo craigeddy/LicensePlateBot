@@ -8,7 +8,7 @@ A Telegram bot for playing the license plate game on road trips. Track which US 
 - `/status` — see your progress with a visual progress bar and a per-player leaderboard
 - `/missing` — see which states you still need
 - `/undo` — remove the last logged state
-- `/newtrip` — start fresh for a new trip (previous trip is saved automatically)
+- `/newtrip [name]` — start fresh for a new trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`)
 - `/history` — view results from all previous trips, including the top spotter for each
 
 State is stored per Telegram chat, so any member of a group chat can log plates and everyone sees the updates in real time.
@@ -232,7 +232,7 @@ Both you and your chat partner can now send commands and see each other's update
 | `/status` | Show progress, states found, and a per-player leaderboard | `/status` |
 | `/missing` | List states not yet found | `/missing` |
 | `/undo` | Remove the last logged state | `/undo` |
-| `/newtrip [name]` | Start a fresh trip; current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
+| `/newtrip [name]` | Start a fresh trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`); current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
 | `/history` | Show results from all previous trips in this chat | `/history` |
 | `/help` | Show command reference | `/help` |
 
