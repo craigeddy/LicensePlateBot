@@ -210,10 +210,14 @@ public class BotCommandHandler
                      $"<b>Found:</b> {stateList}";
 
         var leaderboard = sightings
-            .Where(s => s.UserId != 0 && s.UserName.Length > 0)
+            .Where(s => s.UserId != 0)
             .GroupBy(s => s.UserId)
             .OrderByDescending(g => g.Count())
-            .Select(g => $"{System.Net.WebUtility.HtmlEncode(g.First().UserName)} — {g.Count()}")
+            .Select(g =>
+            {
+                var spotterName = g.First().UserName is { Length: > 0 } n ? n : "Unknown";
+                return $"{System.Net.WebUtility.HtmlEncode(spotterName)} — {g.Count()}";
+            })
             .ToList();
 
         if (leaderboard.Count > 0)
@@ -269,10 +273,10 @@ public class BotCommandHandler
             var date = t.StartedAt.ToString("MMM d, yyyy");
             var name = System.Net.WebUtility.HtmlEncode(t.TripName);
             var topSpotter = sightings
-                .Where(s => s.UserId != 0 && s.UserName.Length > 0)
+                .Where(s => s.UserId != 0)
                 .GroupBy(s => s.UserId)
                 .OrderByDescending(g => g.Count())
-                .Select(g => g.First().UserName)
+                .Select(g => g.First().UserName is { Length: > 0 } n ? n : "Unknown")
                 .FirstOrDefault();
             var mvp = topSpotter is not null ? $" 🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "";
             return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/50 states{mvp}";
