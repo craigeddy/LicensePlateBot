@@ -215,7 +215,8 @@ public class BotCommandHandler
             .OrderByDescending(g => g.Count())
             .Select(g =>
             {
-                var spotterName = g.First().UserName is { Length: > 0 } n ? n : "Unknown";
+                var spotterName = g.Select(s => s.UserName)
+                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Unknown";
                 return $"{System.Net.WebUtility.HtmlEncode(spotterName)} — {g.Count()}";
             })
             .ToList();
@@ -276,7 +277,7 @@ public class BotCommandHandler
                 .Where(s => s.UserId != 0)
                 .GroupBy(s => s.UserId)
                 .OrderByDescending(g => g.Count())
-                .Select(g => g.First().UserName is { Length: > 0 } n ? n : "Unknown")
+                .Select(g => g.Select(s => s.UserName).FirstOrDefault(userName => !string.IsNullOrEmpty(userName)) ?? "Unknown")
                 .FirstOrDefault();
             var mvp = topSpotter is not null ? $" 🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "";
             return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/50 states{mvp}";
