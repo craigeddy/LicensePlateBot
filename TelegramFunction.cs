@@ -7,6 +7,12 @@ using Telegram.Bot.Types;
 
 public class TelegramFunction
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
     private readonly BotCommandHandler _handler;
     private readonly ILogger<TelegramFunction> _logger;
 
@@ -26,10 +32,7 @@ public class TelegramFunction
             if (string.IsNullOrWhiteSpace(body))
                 return req.CreateResponse(HttpStatusCode.BadRequest);
 
-            var update = JsonSerializer.Deserialize<Update>(body, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var update = JsonSerializer.Deserialize<Update>(body, JsonOptions);
 
             if (update is not null)
                 await _handler.HandleUpdateAsync(update);
