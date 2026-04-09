@@ -28,7 +28,8 @@ public class TelegramFunction
 
             var update = JsonSerializer.Deserialize<Update>(body, new JsonSerializerOptions
             {
-                PropertyNameCaseInsensitive = true
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
             });
 
             if (update is not null)
