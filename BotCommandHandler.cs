@@ -205,7 +205,9 @@ public class BotCommandHandler
         var stateList = string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s));
         var bar = BuildProgressBar(sightings.Count, 50);
 
+        var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
         var result = $"🗺 <b>{System.Net.WebUtility.HtmlEncode(state.TripName)}</b>\n" +
+                     $"Started: {startedAt}\n" +
                      $"{bar} {sightings.Count}/50\n\n" +
                      $"<b>Found:</b> {stateList}";
 
