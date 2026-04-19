@@ -63,6 +63,7 @@ public class BotCommandHandler
 
         var chatId = message.Chat.Id;
         var parts = text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return;
         var isCommand = parts[0].StartsWith('/');
         var command = parts[0].ToLower().Split('@')[0]; // handle /cmd@botname format
         var args = parts.Skip(1).ToArray();
