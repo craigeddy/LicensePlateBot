@@ -173,7 +173,7 @@ public class BotCommandHandler
         var existing = sightings.FirstOrDefault(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
-            var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {name}" : "";
+            var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {System.Net.WebUtility.HtmlEncode(name)}" : "";
             return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/50.";
         }
 
@@ -183,7 +183,7 @@ public class BotCommandHandler
         await _stateService.SaveAsync(state);
 
         var remaining = 50 - sightings.Count;
-        var credit = displayName is { Length: > 0 } ? $" by {displayName}" : "";
+        var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
 
         if (sightings.Count == 50)
         {
@@ -228,7 +228,7 @@ public class BotCommandHandler
             })
             .ToList();
 
-        var allStatesList = string.Join("  ", AllStates.OrderBy(s => s));
+        var allStatesList = string.Join(", ", AllStates.OrderBy(s => s));
         var startedAt = state.StartedAt.ToString("MMM d, yyyy");
         var tripName = System.Net.WebUtility.HtmlEncode(state.TripName);
 
