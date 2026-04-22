@@ -4,7 +4,7 @@ A Telegram bot for playing the license plate game on road trips. Track which US 
 
 ## Features
 
-- `/saw CA` or `/saw California` — log a state you spotted; the bot credits you by name and notes if someone already got it
+- `/saw CA` or `/saw California` — log a state you spotted; the bot credits you by name and notes if someone already got it. When you collect the 50th state, the bot sends an elaborate celebration with trip stats, duration, and a final leaderboard
 - `/status` — see your progress with a visual progress bar and a per-player leaderboard
 - `/missing` — see which states you still need
 - `/undo` — remove the last logged state
