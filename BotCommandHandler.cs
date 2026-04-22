@@ -184,8 +184,80 @@ public class BotCommandHandler
 
         var remaining = 50 - sightings.Count;
         var credit = displayName is { Length: > 0 } ? $" by {displayName}" : "";
-        var congrats = sightings.Count == 50 ? "\n\n🎉 <b>YOU GOT ALL 50!</b> 🎉" : "";
-        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/50 states found — {remaining} to go.{congrats}";
+
+        if (sightings.Count == 50)
+        {
+            await SendAllStatesFoundCelebrationAsync(chatId, state, sightings);
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n🏁 <b>50/50 — COMPLETE!</b> 🎆";
+        }
+
+        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/50 states found — {remaining} to go.";
+    }
+
+    private async Task SendAllStatesFoundCelebrationAsync(long chatId, TripState state, List<SightingRecord> sightings)
+    {
+        var duration = DateTimeOffset.UtcNow - state.StartedAt;
+        string durationText;
+        if (duration.TotalDays >= 1)
+        {
+            var days = (int)duration.TotalDays;
+            var hours = duration.Hours;
+            durationText = hours > 0 ? $"{days} day{(days == 1 ? "" : "s")} and {hours} hour{(hours == 1 ? "" : "s")}" : $"{days} day{(days == 1 ? "" : "s")}";
+        }
+        else if (duration.TotalHours >= 1)
+        {
+            var hrs = (int)duration.TotalHours;
+            durationText = $"{hrs} hour{(hrs == 1 ? "" : "s")}";
+        }
+        else
+        {
+            var mins = Math.Max(1, (int)duration.TotalMinutes);
+            durationText = $"{mins} minute{(mins == 1 ? "" : "s")}";
+        }
+
+        var leaderboard = sightings
+            .Where(s => s.UserId != 0)
+            .GroupBy(s => s.UserId)
+            .OrderByDescending(g => g.Count())
+            .Select((g, i) =>
+            {
+                var spotterName = g.Select(s => s.UserName)
+                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Unknown";
+                var medal = i switch { 0 => "🥇", 1 => "🥈", 2 => "🥉", _ => $"   {i + 1}." };
+                return $"{medal} {System.Net.WebUtility.HtmlEncode(spotterName)} — {g.Count()} state{(g.Count() == 1 ? "" : "s")}";
+            })
+            .ToList();
+
+        var allStatesList = string.Join("  ", AllStates.OrderBy(s => s));
+        var startedAt = state.StartedAt.ToString("MMM d, yyyy");
+        var tripName = System.Net.WebUtility.HtmlEncode(state.TripName);
+
+        var msg =
+            "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨\n\n" +
+            "🏆 <b>ALL 50 STATES COLLECTED!</b> 🏆\n\n" +
+            "🌟🌟🌟 <b>LEGENDARY ACHIEVEMENT UNLOCKED!</b> 🌟🌟🌟\n\n" +
+            "You and your crew have spotted license plates from every single US state — " +
+            "from the frozen tundra of <b>Alaska</b> to the tropical shores of <b>Hawaii</b>, " +
+            "from the mighty coasts of <b>California</b> to the historic streets of <b>Maine</b>! " +
+            "You've conquered all 50! 🇺🇸\n\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"🗺️ <b>TRIP: {tripName}</b>\n" +
+            $"📅 Started: {startedAt}\n" +
+            $"⏱️ Duration: {durationText}\n" +
+            "🏁 Final score: <b>50 / 50 states</b>\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━";
+
+        if (leaderboard.Count > 0)
+        {
+            msg += "\n\n🏆 <b>FINAL LEADERBOARD:</b>\n" + string.Join("\n", leaderboard);
+        }
+
+        msg +=
+            $"\n\n🗺️ <b>ALL 50 STATES SPOTTED:</b>\n{allStatesList}\n\n" +
+            "🎉🥳🎊 <b>CONGRATULATIONS, ROAD TRIP LEGENDS!</b> 🎊🥳🎉\n\n" +
+            "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨";
+
+        await _bot.SendMessage(chatId, msg, parseMode: ParseMode.Html);
     }
 
     private static string DisplayName(Telegram.Bot.Types.User? user)
