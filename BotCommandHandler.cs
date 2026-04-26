@@ -9,14 +9,15 @@ public class BotCommandHandler
     private readonly ITelegramBotClient _bot;
     private readonly TripStateService _stateService;
 
-    // All 50 US states
+    // All 50 US states plus DC
     private static readonly HashSet<string> AllStates = new(StringComparer.OrdinalIgnoreCase)
     {
         "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
         "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
         "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
         "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
-        "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
+        "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
+        "DC"
     };
 
     private static readonly Dictionary<string, string> StateNames = new(StringComparer.OrdinalIgnoreCase)
@@ -30,7 +31,8 @@ public class BotCommandHandler
         {"NM","New Mexico"},{"NY","New York"},{"NC","North Carolina"},{"ND","North Dakota"},{"OH","Ohio"},
         {"OK","Oklahoma"},{"OR","Oregon"},{"PA","Pennsylvania"},{"RI","Rhode Island"},{"SC","South Carolina"},
         {"SD","South Dakota"},{"TN","Tennessee"},{"TX","Texas"},{"UT","Utah"},{"VT","Vermont"},
-        {"VA","Virginia"},{"WA","Washington"},{"WV","West Virginia"},{"WI","Wisconsin"},{"WY","Wyoming"}
+        {"VA","Virginia"},{"WA","Washington"},{"WV","West Virginia"},{"WI","Wisconsin"},{"WY","Wyoming"},
+        {"DC","Washington DC"}
     };
 
     private static readonly Dictionary<string, string> StateNameToAbbr =
@@ -141,7 +143,7 @@ public class BotCommandHandler
             ? (pendingDefault ?? $"Road Trip {DateTime.UtcNow:MM/dd/yyyy}")
             : string.Join(" ", args);
         await _stateService.ResetAsync(chatId, tripName);
-        return $"🚗 <b>New trip started: {System.Net.WebUtility.HtmlEncode(tripName)}</b>\n\nReady to collect all 50 states! Use /saw CA to log a plate.";
+        return $"🚗 <b>New trip started: {System.Net.WebUtility.HtmlEncode(tripName)}</b>\n\nReady to collect all 51 plates! Use /saw CA to log a plate.";
     }
 
     private async Task<string?> HandleSaw(long chatId, string[] args, Telegram.Bot.Types.User? from)
@@ -174,7 +176,7 @@ public class BotCommandHandler
         if (existing is not null)
         {
             var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {System.Net.WebUtility.HtmlEncode(name)}" : "";
-            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/50.";
+            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/51.";
         }
 
         var displayName = DisplayName(from);
@@ -182,16 +184,16 @@ public class BotCommandHandler
         state.SeenStatesJson = _stateService.SerializeSightings(sightings);
         await _stateService.SaveAsync(state);
 
-        var remaining = 50 - sightings.Count;
+        var remaining = 51 - sightings.Count;
         var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
 
-        if (sightings.Count == 50)
+        if (sightings.Count == 51)
         {
             await SendAllStatesFoundCelebrationAsync(chatId, state, sightings);
-            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n🏁 <b>50/50 — COMPLETE!</b> 🎆";
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n🏁 <b>51/51 — COMPLETE!</b> 🎆";
         }
 
-        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/50 states found — {remaining} to go.";
+        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/51 plates found — {remaining} to go.";
     }
 
     private async Task SendAllStatesFoundCelebrationAsync(long chatId, TripState state, List<SightingRecord> sightings)
@@ -234,17 +236,17 @@ public class BotCommandHandler
 
         var msg =
             "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨\n\n" +
-            "🏆 <b>ALL 50 STATES COLLECTED!</b> 🏆\n\n" +
+            "🏆 <b>ALL 51 PLATES COLLECTED!</b> 🏆\n\n" +
             "🌟🌟🌟 <b>LEGENDARY ACHIEVEMENT UNLOCKED!</b> 🌟🌟🌟\n\n" +
             "You and your crew have spotted license plates from every single US state — " +
             "from the frozen tundra of <b>Alaska</b> to the tropical shores of <b>Hawaii</b>, " +
             "from the mighty coasts of <b>California</b> to the historic streets of <b>Maine</b>! " +
-            "You've conquered all 50! 🇺🇸\n\n" +
+            "You've conquered all 51! 🇺🇸\n\n" +
             "━━━━━━━━━━━━━━━━━━━━━━\n" +
             $"🗺️ <b>TRIP: {tripName}</b>\n" +
             $"📅 Started: {startedAt}\n" +
             $"⏱️ Duration: {durationText}\n" +
-            "🏁 Final score: <b>50 / 50 states</b>\n" +
+            "🏁 Final score: <b>51 / 51 plates</b>\n" +
             "━━━━━━━━━━━━━━━━━━━━━━";
 
         if (leaderboard.Count > 0)
@@ -253,7 +255,7 @@ public class BotCommandHandler
         }
 
         msg +=
-            $"\n\n🗺️ <b>ALL 50 STATES SPOTTED:</b>\n{allStatesList}\n\n" +
+            $"\n\n🗺️ <b>ALL 51 PLATES SPOTTED:</b>\n{allStatesList}\n\n" +
             "🎉🥳🎊 <b>CONGRATULATIONS, ROAD TRIP LEGENDS!</b> 🎊🥳🎉\n\n" +
             "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨";
 
@@ -276,12 +278,12 @@ public class BotCommandHandler
             return "No plates logged yet! Use /saw CA to log your first one.";
 
         var stateList = string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s));
-        var bar = BuildProgressBar(sightings.Count, 50);
+        var bar = BuildProgressBar(sightings.Count, 51);
 
         var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
         var result = $"🗺 <b>{System.Net.WebUtility.HtmlEncode(state.TripName)}</b>\n" +
                      $"Started: {startedAt}\n" +
-                     $"{bar} {sightings.Count}/50\n\n" +
+                     $"{bar} {sightings.Count}/51\n\n" +
                      $"<b>Found:</b> {stateList}";
 
         var leaderboard = sightings
@@ -315,7 +317,7 @@ public class BotCommandHandler
             .ToList();
 
         if (missing.Count == 0)
-            return "🎉 You've found all 50 states! Nothing missing!";
+            return "🎉 You've found all 51 plates! Nothing missing!";
 
         var list = string.Join(", ", missing);
         return $"🔍 <b>{missing.Count} states still needed:</b>\n{list}";
@@ -334,7 +336,7 @@ public class BotCommandHandler
         state.SeenStatesJson = _stateService.SerializeSightings(sightings);
         await _stateService.SaveAsync(state);
 
-        return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/50.";
+        return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/51.";
     }
 
     private async Task<string> HandleHistory(long chatId)
@@ -355,7 +357,7 @@ public class BotCommandHandler
                 .Select(g => g.Select(s => s.UserName).FirstOrDefault(userName => !string.IsNullOrEmpty(userName)) ?? "Unknown")
                 .FirstOrDefault();
             var mvp = topSpotter is not null ? $" 🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "";
-            return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/50 states{mvp}";
+            return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/51 plates{mvp}";
         });
 
         return "📋 <b>Trip History</b>\n\n" + string.Join("\n", lines);
