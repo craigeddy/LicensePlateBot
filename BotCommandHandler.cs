@@ -76,7 +76,7 @@ public class BotCommandHandler
         if (isCommand)
         {
             // Clear any pending conversational state when a new command arrives
-            if (command != "/saw")
+            if (command != "/saw" && command != "/skip")
             {
                 var s = await _stateService.GetOrCreateAsync(chatId);
                 if (s.PendingCommand is not null)
@@ -108,6 +108,12 @@ public class BotCommandHandler
                 state.PendingCommand = null;
                 await _stateService.SaveAsync(state);
                 reply = await HandleSaw(chatId, parts, message.From);
+            }
+            else if (state.PendingCommand == "skip")
+            {
+                state.PendingCommand = null;
+                await _stateService.SaveAsync(state);
+                reply = await HandleSkip(chatId, parts);
             }
             else if (state.PendingCommand is { } pc && pc.StartsWith("newtrip:", StringComparison.Ordinal))
             {
@@ -208,10 +214,18 @@ public class BotCommandHandler
         return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n{sightings.Count}/{target} plates found — {remaining} to go.";
     }
 
-    private async Task<string> HandleSkip(long chatId, string[] args)
+    private async Task<string?> HandleSkip(long chatId, string[] args)
     {
         if (args.Length == 0)
-            return "Usage: /skip CA — specify a state abbreviation or full name to skip.";
+        {
+            var pending = await _stateService.GetOrCreateAsync(chatId);
+            pending.PendingCommand = "skip";
+            await _stateService.SaveAsync(pending);
+            await _bot.SendMessage(chatId,
+                "Which state do you want to skip? Reply with the 2-letter abbreviation or full name (e.g. HI, Hawaii).",
+                replyMarkup: new ForceReplyMarkup());
+            return null;
+        }
 
         var input = string.Join(" ", args);
         string abbr;
@@ -223,6 +237,7 @@ public class BotCommandHandler
             return $"❓ <b>{System.Net.WebUtility.HtmlEncode(input)}</b> isn't a recognized US state. Use a 2-letter abbreviation (HI) or full name (Hawaii).";
 
         var state = await _stateService.GetOrCreateAsync(chatId);
+        state.PendingCommand = null;
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
         var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
