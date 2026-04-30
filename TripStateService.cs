@@ -53,6 +53,7 @@ public class TripStateService
                     RowKey = $"trip_{existing.StartedAt:yyyyMMddHHmmss}",
                     TripName = existing.TripName,
                     SeenStatesJson = existing.SeenStatesJson,
+                    SkippedStatesJson = existing.SkippedStatesJson,
                     StartedAt = existing.StartedAt,
                     EndedAt = DateTimeOffset.UtcNow
                 };
@@ -101,4 +102,20 @@ public class TripStateService
 
     public string SerializeSightings(List<SightingRecord> sightings) =>
         JsonSerializer.Serialize(sightings);
+
+    public List<string> DeserializeSkippedStates(string? json)
+    {
+        if (string.IsNullOrEmpty(json) || json == "[]") return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public string SerializeSkippedStates(List<string> states) =>
+        JsonSerializer.Serialize(states);
 }
