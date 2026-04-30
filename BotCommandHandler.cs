@@ -44,6 +44,7 @@ public class BotCommandHandler
     public static readonly Telegram.Bot.Types.BotCommand[] Commands =
     [
         new() { Command = "saw",      Description = "Log a state you spotted (e.g. /saw CA)" },
+        new() { Command = "skip",     Description = "Skip a state so it's not required to complete (e.g. /skip HI)" },
         new() { Command = "status",   Description = "See your current progress" },
         new() { Command = "missing",  Description = "See which states are still needed" },
         new() { Command = "undo",     Description = "Remove the last logged state" },
@@ -89,6 +90,7 @@ public class BotCommandHandler
             {
                 "/newtrip" or "/start" => await HandleNewTrip(chatId, args),
                 "/saw"                 => await HandleSaw(chatId, args, message.From),
+                "/skip"                => await HandleSkip(chatId, args),
                 "/status"              => await HandleStatus(chatId),
                 "/missing"             => await HandleMissing(chatId),
                 "/undo"                => await HandleUndo(chatId),
@@ -162,7 +164,7 @@ public class BotCommandHandler
         var input = string.Join(" ", args);
         string abbr;
         if (AllStates.Contains(input))
-            abbr = input.ToUpper();
+            abbr = input.ToUpperInvariant();
         else if (StateNameToAbbr.TryGetValue(input, out var matched))
             abbr = matched;
         else
@@ -171,32 +173,77 @@ public class BotCommandHandler
         var state = await _stateService.GetOrCreateAsync(chatId);
         state.PendingCommand = null;
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
+        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
         var existing = sightings.FirstOrDefault(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
             var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {System.Net.WebUtility.HtmlEncode(name)}" : "";
-            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/51.";
+            var currentTarget = 51 - skipped.Count;
+            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/{currentTarget}.";
         }
+
+        // If the state was skipped, automatically un-skip it when the player logs it
+        var skippedEntry = skipped.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
+        var wasSkipped = skippedEntry is not null;
+        if (wasSkipped) skipped.Remove(skippedEntry!);
 
         var displayName = DisplayName(from);
         sightings.Add(new SightingRecord(abbr, from?.Id ?? 0, displayName));
         state.SeenStatesJson = _stateService.SerializeSightings(sightings);
+        state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
         await _stateService.SaveAsync(state);
 
-        var remaining = 51 - sightings.Count;
+        var target = 51 - skipped.Count;
+        var remaining = target - sightings.Count;
         var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
+        var unskipNote = wasSkipped ? " (removed from skip list)" : "";
 
-        if (sightings.Count == 51)
+        if (sightings.Count == target)
         {
-            await SendAllStatesFoundCelebrationAsync(chatId, state, sightings);
-            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n🏁 <b>51/51 — COMPLETE!</b> 🎆";
+            await SendAllStatesFoundCelebrationAsync(chatId, state, sightings, skipped);
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n🏁 <b>{target}/{target} — COMPLETE!</b> 🎆";
         }
 
-        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/51 plates found — {remaining} to go.";
+        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n{sightings.Count}/{target} plates found — {remaining} to go.";
     }
 
-    private async Task SendAllStatesFoundCelebrationAsync(long chatId, TripState state, List<SightingRecord> sightings)
+    private async Task<string> HandleSkip(long chatId, string[] args)
+    {
+        if (args.Length == 0)
+            return "Usage: /skip CA — specify a state abbreviation or full name to skip.";
+
+        var input = string.Join(" ", args);
+        string abbr;
+        if (AllStates.Contains(input))
+            abbr = input.ToUpperInvariant();
+        else if (StateNameToAbbr.TryGetValue(input, out var matched))
+            abbr = matched;
+        else
+            return $"❓ <b>{System.Net.WebUtility.HtmlEncode(input)}</b> isn't a recognized US state. Use a 2-letter abbreviation (HI) or full name (Hawaii).";
+
+        var state = await _stateService.GetOrCreateAsync(chatId);
+        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
+        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+
+        if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+            return $"❓ You've already spotted <b>{StateNames[abbr]}</b> ({abbr}) — can't skip a state you've already found.";
+
+        if (skipped.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+            return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on the skip list.";
+
+        if (skipped.Count >= 50)
+            return "⚠️ You must keep at least one state required to complete the game.";
+
+        skipped.Add(abbr);
+        state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
+        await _stateService.SaveAsync(state);
+
+        var target = 51 - skipped.Count;
+        return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) skipped. You now need {target} plates to complete the game.";
+    }
+
+    private async Task SendAllStatesFoundCelebrationAsync(long chatId, TripState state, List<SightingRecord> sightings, List<string> skippedStates)
     {
         var duration = DateTimeOffset.UtcNow - state.StartedAt;
         string durationText;
@@ -230,23 +277,22 @@ public class BotCommandHandler
             })
             .ToList();
 
-        var allStatesList = string.Join(", ", AllStates.OrderBy(s => s));
+        var target = 51 - skippedStates.Count;
+        var foundStatesList = string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s));
         var startedAt = state.StartedAt.ToString("MMM d, yyyy");
         var tripName = System.Net.WebUtility.HtmlEncode(state.TripName);
 
         var msg =
             "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨\n\n" +
-            "🏆 <b>ALL 51 PLATES COLLECTED!</b> 🏆\n\n" +
+            $"🏆 <b>ALL {target} PLATES COLLECTED!</b> 🏆\n\n" +
             "🌟🌟🌟 <b>LEGENDARY ACHIEVEMENT UNLOCKED!</b> 🌟🌟🌟\n\n" +
-            "You and your crew have spotted license plates from every single US state — " +
-            "from the frozen tundra of <b>Alaska</b> to the tropical shores of <b>Hawaii</b>, " +
-            "from the mighty coasts of <b>California</b> to the historic streets of <b>Maine</b>! " +
-            "You've conquered all 51! 🇺🇸\n\n" +
+            $"You and your crew have spotted license plates from all {target} required states! " +
+            "You've conquered every plate on your list! 🇺🇸\n\n" +
             "━━━━━━━━━━━━━━━━━━━━━━\n" +
             $"🗺️ <b>TRIP: {tripName}</b>\n" +
             $"📅 Started: {startedAt}\n" +
             $"⏱️ Duration: {durationText}\n" +
-            "🏁 Final score: <b>51 / 51 plates</b>\n" +
+            $"🏁 Final score: <b>{target} / {target} plates</b>\n" +
             "━━━━━━━━━━━━━━━━━━━━━━";
 
         if (leaderboard.Count > 0)
@@ -255,7 +301,7 @@ public class BotCommandHandler
         }
 
         msg +=
-            $"\n\n🗺️ <b>ALL 51 PLATES SPOTTED:</b>\n{allStatesList}\n\n" +
+            $"\n\n🗺️ <b>ALL {target} PLATES SPOTTED:</b>\n{foundStatesList}\n\n" +
             "🎉🥳🎊 <b>CONGRATULATIONS, ROAD TRIP LEGENDS!</b> 🎊🥳🎉\n\n" +
             "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨";
 
@@ -273,18 +319,25 @@ public class BotCommandHandler
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
+        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
-        if (sightings.Count == 0)
+        if (sightings.Count == 0 && skipped.Count == 0)
             return "No plates logged yet! Use /saw CA to log your first one.";
 
-        var stateList = string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s));
-        var bar = BuildProgressBar(sightings.Count, 51);
+        var target = 51 - skipped.Count;
+        var stateList = sightings.Count > 0
+            ? string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s))
+            : "none yet";
+        var bar = BuildProgressBar(sightings.Count, target);
 
         var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
         var result = $"🗺 <b>{System.Net.WebUtility.HtmlEncode(state.TripName)}</b>\n" +
                      $"Started: {startedAt}\n" +
-                     $"{bar} {sightings.Count}/51\n\n" +
+                     $"{bar} {sightings.Count}/{target}\n\n" +
                      $"<b>Found:</b> {stateList}";
+
+        if (skipped.Count > 0)
+            result += $"\n<b>Skipped:</b> {string.Join(", ", skipped.OrderBy(s => s))}";
 
         var leaderboard = sightings
             .Where(s => s.UserId != 0)
@@ -309,15 +362,18 @@ public class BotCommandHandler
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
-        var seenAbbrs = sightings.Select(s => s.State).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+        var seenOrSkipped = sightings.Select(s => s.State)
+            .Concat(skipped)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var missing = AllStates
-            .Where(s => !seenAbbrs.Contains(s))
+            .Where(s => !seenOrSkipped.Contains(s))
             .OrderBy(s => s)
             .ToList();
 
         if (missing.Count == 0)
-            return "🎉 You've found all 51 plates! Nothing missing!";
+            return "🎉 You've found all required plates! Nothing missing!";
 
         var list = string.Join(", ", missing);
         return $"🔍 <b>{missing.Count} states still needed:</b>\n{list}";
@@ -327,6 +383,7 @@ public class BotCommandHandler
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
+        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
         if (sightings.Count == 0)
             return "Nothing to undo — no states logged yet.";
@@ -336,7 +393,8 @@ public class BotCommandHandler
         state.SeenStatesJson = _stateService.SerializeSightings(sightings);
         await _stateService.SaveAsync(state);
 
-        return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/51.";
+        var target = 51 - skipped.Count;
+        return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/{target}.";
     }
 
     private async Task<string> HandleHistory(long chatId)
@@ -348,6 +406,8 @@ public class BotCommandHandler
         var lines = history.Take(25).Select((t, i) =>
         {
             var sightings = _stateService.DeserializeSightings(t.SeenStatesJson);
+            var skipped = _stateService.DeserializeSkippedStates(t.SkippedStatesJson);
+            var tripTarget = 51 - skipped.Count;
             var date = t.StartedAt.ToString("MMM d, yyyy");
             var name = System.Net.WebUtility.HtmlEncode(t.TripName);
             var topSpotter = sightings
@@ -357,7 +417,8 @@ public class BotCommandHandler
                 .Select(g => g.Select(s => s.UserName).FirstOrDefault(userName => !string.IsNullOrEmpty(userName)) ?? "Unknown")
                 .FirstOrDefault();
             var mvp = topSpotter is not null ? $" 🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "";
-            return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/51 plates{mvp}";
+            var skippedNote = skipped.Count > 0 ? $" (skipped: {string.Join(", ", skipped.OrderBy(s => s))})" : "";
+            return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/{tripTarget} plates{mvp}{skippedNote}";
         });
 
         return "📋 <b>Trip History</b>\n\n" + string.Join("\n", lines);
@@ -366,6 +427,7 @@ public class BotCommandHandler
     private static string GetHelp() =>
         "<b>License Plate Game 🚗</b>\n\n" +
         "/saw CA — log a state you spotted (abbreviation or full name)\n" +
+        "/skip HI — skip a state so it's not required to complete the game\n" +
         "/status — see your progress\n" +
         "/missing — see what's left\n" +
         "/undo — remove the last logged state\n" +

@@ -40,12 +40,13 @@ public class TripStateService
 
     public async Task ResetAsync(long chatId, string tripName)
     {
-        // Archive current trip if it has any states logged
+        // Archive current trip if it has any states logged or any states skipped
         try
         {
             var response = await _tableClient.GetEntityAsync<TripState>(chatId.ToString(), "currentTrip");
             var existing = response.Value;
-            if (DeserializeSightings(existing.SeenStatesJson).Count > 0)
+            if (DeserializeSightings(existing.SeenStatesJson).Count > 0 ||
+                DeserializeSkippedStates(existing.SkippedStatesJson).Count > 0)
             {
                 var archived = new TripState
                 {
@@ -53,6 +54,7 @@ public class TripStateService
                     RowKey = $"trip_{existing.StartedAt:yyyyMMddHHmmss}",
                     TripName = existing.TripName,
                     SeenStatesJson = existing.SeenStatesJson,
+                    SkippedStatesJson = existing.SkippedStatesJson,
                     StartedAt = existing.StartedAt,
                     EndedAt = DateTimeOffset.UtcNow
                 };
@@ -101,4 +103,20 @@ public class TripStateService
 
     public string SerializeSightings(List<SightingRecord> sightings) =>
         JsonSerializer.Serialize(sightings);
+
+    public List<string> DeserializeSkippedStates(string? json)
+    {
+        if (string.IsNullOrEmpty(json) || json == "[]") return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public string SerializeSkippedStates(List<string> states) =>
+        JsonSerializer.Serialize(states);
 }

@@ -18,4 +18,5 @@ public class TripState : ITableEntity
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? PendingCommand { get; set; }  // conversational state, e.g. "saw"
     public DateTimeOffset? EndedAt { get; set; }  // set when trip is archived
+    public string SkippedStatesJson { get; set; } = "[]";  // JSON array of skipped state abbreviations
 }

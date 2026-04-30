@@ -4,12 +4,13 @@ A Telegram bot for playing the license plate game on road trips. Track which US 
 
 ## Features
 
-- `/saw CA` or `/saw California` or `/saw DC` — log a state you spotted; the bot credits you by name and notes if someone already got it. When you collect the 51st plate, the bot sends an elaborate celebration with trip stats, duration, and a final leaderboard
-- `/status` — see your progress with a visual progress bar and a per-player leaderboard
-- `/missing` — see which states you still need
+- `/saw CA` or `/saw California` or `/saw DC` — log a state you spotted; the bot credits you by name and notes if someone already got it. When you collect all required plates, the bot sends an elaborate celebration with trip stats, duration, and a final leaderboard
+- `/skip HI` — remove a state from the required list so it doesn't block completion; skipped states appear in `/status` and are noted in `/history`
+- `/status` — see your progress with a visual progress bar and a per-player leaderboard; lists any skipped states
+- `/missing` — see which states you still need (excludes skipped states)
 - `/undo` — remove the last logged state
 - `/newtrip [name]` — start fresh for a new trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`)
-- `/history` — view results from all previous trips, including the top spotter for each
+- `/history` — view results from all previous trips, including the top spotter and any skipped states for each
 
 State is stored per Telegram chat, so any member of a group chat can log plates and everyone sees the updates in real time.
 
@@ -229,11 +230,12 @@ Both you and your chat partner can now send commands and see each other's update
 | Command | Description | Example |
 |---|---|---|
 | `/saw [state]` | Log a state you spotted by abbreviation or full name (including DC); credits you by name; omit the state and the bot will prompt you | `/saw CA` or `/saw California` or `/saw DC` |
-| `/status` | Show progress, states found, and a per-player leaderboard | `/status` |
-| `/missing` | List states not yet found | `/missing` |
+| `/skip [state]` | Remove a state from the required list so it doesn't block completion; logging a skipped state later automatically un-skips it | `/skip HI` or `/skip Hawaii` |
+| `/status` | Show progress, states found, skipped states, and a per-player leaderboard | `/status` |
+| `/missing` | List states not yet found (excludes skipped states) | `/missing` |
 | `/undo` | Remove the last logged state | `/undo` |
 | `/newtrip [name]` | Start a fresh trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`); current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
-| `/history` | Show results from all previous trips in this chat | `/history` |
+| `/history` | Show results from all previous trips in this chat, including any skipped states | `/history` |
 | `/help` | Show command reference | `/help` |
 
 ---
