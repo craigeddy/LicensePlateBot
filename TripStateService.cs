@@ -40,12 +40,13 @@ public class TripStateService
 
     public async Task ResetAsync(long chatId, string tripName)
     {
-        // Archive current trip if it has any states logged
+        // Archive current trip if it has any states logged or any states skipped
         try
         {
             var response = await _tableClient.GetEntityAsync<TripState>(chatId.ToString(), "currentTrip");
             var existing = response.Value;
-            if (DeserializeSightings(existing.SeenStatesJson).Count > 0)
+            if (DeserializeSightings(existing.SeenStatesJson).Count > 0 ||
+                DeserializeSkippedStates(existing.SkippedStatesJson).Count > 0)
             {
                 var archived = new TripState
                 {

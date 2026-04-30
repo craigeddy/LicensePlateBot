@@ -76,7 +76,7 @@ public class BotCommandHandler
         if (isCommand)
         {
             // Clear any pending conversational state when a new command arrives
-            if (command != "/saw" && command != "/skip")
+            if (command != "/saw")
             {
                 var s = await _stateService.GetOrCreateAsync(chatId);
                 if (s.PendingCommand is not null)
@@ -164,7 +164,7 @@ public class BotCommandHandler
         var input = string.Join(" ", args);
         string abbr;
         if (AllStates.Contains(input))
-            abbr = input.ToUpper();
+            abbr = input.ToUpperInvariant();
         else if (StateNameToAbbr.TryGetValue(input, out var matched))
             abbr = matched;
         else
@@ -216,7 +216,7 @@ public class BotCommandHandler
         var input = string.Join(" ", args);
         string abbr;
         if (AllStates.Contains(input))
-            abbr = input.ToUpper();
+            abbr = input.ToUpperInvariant();
         else if (StateNameToAbbr.TryGetValue(input, out var matched))
             abbr = matched;
         else
@@ -231,6 +231,9 @@ public class BotCommandHandler
 
         if (skipped.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
             return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on the skip list.";
+
+        if (skipped.Count >= 50)
+            return "⚠️ You must keep at least one state required to complete the game.";
 
         skipped.Add(abbr);
         state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
