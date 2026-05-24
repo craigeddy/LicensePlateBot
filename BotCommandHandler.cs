@@ -1,4 +1,5 @@
 using LicensePlateBot.Models;
+using Microsoft.Extensions.Configuration;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -8,6 +9,7 @@ public class BotCommandHandler
 {
     private readonly ITelegramBotClient _bot;
     private readonly TripStateService _stateService;
+    private readonly long? _adminUserId;
 
     // All 50 US states plus DC
     private static readonly HashSet<string> AllStates = new(StringComparer.OrdinalIgnoreCase)
@@ -53,10 +55,11 @@ public class BotCommandHandler
         new() { Command = "help",     Description = "Show available commands" },
     ];
 
-    public BotCommandHandler(ITelegramBotClient bot, TripStateService stateService)
+    public BotCommandHandler(ITelegramBotClient bot, TripStateService stateService, IConfiguration config)
     {
         _bot = bot;
         _stateService = stateService;
+        _adminUserId = long.TryParse(config["AdminTelegramUserId"], out var id) ? id : null;
     }
 
     public async Task HandleUpdateAsync(Update update)
@@ -96,6 +99,7 @@ public class BotCommandHandler
                 "/undo"                => await HandleUndo(chatId),
                 "/history"             => await HandleHistory(chatId),
                 "/help"                => GetHelp(),
+                "/broadcast"           => await HandleBroadcast(chatId, args, message.From),
                 _                      => null
             };
         }
@@ -454,5 +458,48 @@ public class BotCommandHandler
     {
         var filled = (int)Math.Round((double)current / total * 10);
         return "[" + new string('█', filled) + new string('░', 10 - filled) + "]";
+    }
+
+    private async Task<string?> HandleBroadcast(long chatId, string[] args, Telegram.Bot.Types.User? from)
+    {
+        // Silently ignore non-admins
+        if (_adminUserId is null || from?.Id != _adminUserId)
+            return null;
+
+        if (args.Length == 0)
+            return "Usage: /broadcast &lt;message&gt;\n       /broadcast &lt;chatId&gt; &lt;message&gt;";
+
+        // If the first arg looks like a chat ID, target that chat only
+        long? targetChatId = null;
+        string[] messageArgs = args;
+        if (args.Length > 1 && long.TryParse(args[0], out var parsedId))
+        {
+            targetChatId = parsedId;
+            messageArgs = args[1..];
+        }
+
+        var text = string.Join(" ", messageArgs);
+        if (string.IsNullOrWhiteSpace(text))
+            return "Usage: /broadcast &lt;message&gt;\n       /broadcast &lt;chatId&gt; &lt;message&gt;";
+
+        var chatIds = targetChatId.HasValue
+            ? new List<long> { targetChatId.Value }
+            : await _stateService.GetAllChatIdsAsync();
+
+        int sent = 0, failed = 0;
+        foreach (var id in chatIds)
+        {
+            try
+            {
+                await _bot.SendMessage(id, text);
+                sent++;
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+
+        return $"📣 Broadcast sent: {sent} delivered, {failed} failed ({chatIds.Count} total).";
     }
 }

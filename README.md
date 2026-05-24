@@ -11,6 +11,7 @@ A Telegram bot for playing the license plate game on road trips. Track which US 
 - `/undo` — remove the last logged state
 - `/newtrip [name]` — start fresh for a new trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`)
 - `/history` — view results from all previous trips, including the top spotter and any skipped states for each
+- **Admin broadcast** — send a plain-text message to all active game chats, or to a specific chat, via an HTTP trigger or the `/broadcast` Telegram command (admin-only)
 
 State is stored per Telegram chat, so any member of a group chat can log plates and everyone sees the updates in real time.
 
@@ -58,7 +59,8 @@ Edit `local.settings.json` and fill in your bot token:
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
     "TelegramBotToken": "<YOUR_BOT_TOKEN>",
-    "StorageConnectionString": "UseDevelopmentStorage=true"
+    "StorageConnectionString": "UseDevelopmentStorage=true",
+    "AdminTelegramUserId": "<YOUR_TELEGRAM_USER_ID>"
   }
 }
 ```
@@ -156,7 +158,8 @@ az functionapp config appsettings set \
   --resource-group rg-licenseplate-bot \
   --settings \
     TelegramBotToken="<YOUR_BOT_TOKEN>" \
-    StorageConnectionString="<YOUR_CONNECTION_STRING>"
+    StorageConnectionString="<YOUR_CONNECTION_STRING>" \
+    AdminTelegramUserId="<YOUR_TELEGRAM_USER_ID>"
 ```
 
 ### 4. Deploy
@@ -225,6 +228,45 @@ Both you and your chat partner can now send commands and see each other's update
 
 ---
 
+## Admin Broadcast
+
+As an admin you can push a plain-text message to all active game chats, or to a specific chat, via two mechanisms.
+
+### 1. HTTP trigger
+
+`POST /api/broadcast` — secured by the Azure Function host key.
+
+```bash
+# Broadcast to all active chats
+curl -X POST "https://func-licenseplate-bot.azurewebsites.net/api/broadcast?code=<FUNCTION_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "We are doing maintenance at midnight — save your progress!"}'
+
+# Broadcast to a specific chat
+curl -X POST "https://func-licenseplate-bot.azurewebsites.net/api/broadcast?code=<FUNCTION_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hey, your trip data was migrated.", "chatId": -1001234567890}'
+```
+
+Response: `{ "sent": 3, "failed": 0, "total": 3 }`
+
+For local testing replace the URL with `http://localhost:7071/api/broadcast` (no `?code=` needed in dev).
+
+### 2. Telegram `/broadcast` command
+
+Send the command from your own Telegram account (the one whose user ID is set in `AdminTelegramUserId`).
+
+```
+/broadcast Hello everyone, enjoy the trip!
+/broadcast -1001234567890 Hey, just this one chat.
+```
+
+The bot replies with a delivery summary visible only in your chat. Non-admins get no response.
+
+To find your Telegram user ID, message [@userinfobot](https://t.me/userinfobot).
+
+---
+
 ## Bot Commands Reference
 
 | Command | Description | Example |
@@ -252,6 +294,7 @@ LicensePlateBot/
 ├── local.settings.json      # Local dev secrets (gitignored)
 ├── Program.cs               # Host builder and DI wiring
 ├── TelegramFunction.cs      # HTTP trigger — receives webhook POSTs
+├── BroadcastFunction.cs     # HTTP trigger — admin broadcast endpoint
 ├── BotCommandHandler.cs     # Command routing and response logic
 ├── TripStateService.cs      # Azure Table Storage read/write
 └── Models/
