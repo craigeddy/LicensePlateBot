@@ -73,6 +73,21 @@ public class TripStateService
         await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace);
     }
 
+    public async Task<List<long>> GetAllChatIdsAsync()
+    {
+        var chatIds = new List<long>();
+
+        await foreach (var entity in _tableClient.QueryAsync<TableEntity>(
+            filter: "RowKey eq 'currentTrip'",
+            select: ["PartitionKey"]))
+        {
+            if (long.TryParse(entity.PartitionKey, out var id))
+                chatIds.Add(id);
+        }
+
+        return chatIds;
+    }
+
     public async Task<List<TripState>> GetHistoryAsync(long chatId)
     {
         var partitionKey = chatId.ToString();
