@@ -64,6 +64,7 @@ Local values live in `local.settings.json` (gitignored). Production values are s
 - **State is stored as JSON in a single Table Storage row** per chat. `SeenStatesJson` is a serialized `List<string>` of 2-letter state abbreviations.
 - **State abbreviations are always uppercased** before storage and comparison. Validation uses the `AllStates` HashSet in `BotCommandHandler`.
 - **Bot replies use HTML parse mode** — use `<b>` for bold, not markdown. Avoid other HTML tags.
+- **Structured replies use rich messages** — `/status`, `/history`, `/help`, and the all-plates-found celebration are sent via `SendRichMessage`/`InputRichMessage.Html` (Bot API 10.1) so they can use `<h1>`-`<h3>`, `<ul>`/`<li>`, and `<table>`. These handlers send directly via `_bot` and return `null` instead of a reply string. Use the `SendRichHtmlAsync` helper for new rich replies.
 - **`PendingCommand` on `TripState`** tracks conversational state (e.g. waiting for a state abbreviation after `/saw` with no argument). Always clear it when a new slash command arrives.
 
 ## Adding a New Command

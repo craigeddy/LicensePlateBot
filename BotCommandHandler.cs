@@ -98,7 +98,7 @@ public class BotCommandHandler
                 "/missing"             => await HandleMissing(chatId),
                 "/undo"                => await HandleUndo(chatId),
                 "/history"             => await HandleHistory(chatId),
-                "/help"                => GetHelp(),
+                "/help"                => await HandleHelp(chatId),
                 "/broadcast"           => await HandleBroadcast(chatId, args, message.From),
                 _                      => null
             };
@@ -291,8 +291,8 @@ public class BotCommandHandler
             {
                 var spotterName = g.Select(s => s.UserName)
                     .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Unknown";
-                var medal = i switch { 0 => "🥇", 1 => "🥈", 2 => "🥉", _ => $"   {i + 1}." };
-                return $"{medal} {System.Net.WebUtility.HtmlEncode(spotterName)} — {g.Count()} state{(g.Count() == 1 ? "" : "s")}";
+                var medal = i switch { 0 => "🥇", 1 => "🥈", 2 => "🥉", _ => $"{i + 1}." };
+                return $"<tr><td>{medal}</td><td>{System.Net.WebUtility.HtmlEncode(spotterName)}</td><td>{g.Count()}</td></tr>";
             })
             .ToList();
 
@@ -301,30 +301,39 @@ public class BotCommandHandler
         var startedAt = state.StartedAt.ToString("MMM d, yyyy");
         var tripName = System.Net.WebUtility.HtmlEncode(state.TripName);
 
-        var msg =
-            "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨\n\n" +
-            $"🏆 <b>ALL {target} PLATES COLLECTED!</b> 🏆\n\n" +
-            "🌟🌟🌟 <b>LEGENDARY ACHIEVEMENT UNLOCKED!</b> 🌟🌟🌟\n\n" +
-            $"You and your crew have spotted license plates from all {target} required states! " +
-            "You've conquered every plate on your list! 🇺🇸\n\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━\n" +
-            $"🗺️ <b>TRIP: {tripName}</b>\n" +
-            $"📅 Started: {startedAt}\n" +
-            $"⏱️ Duration: {durationText}\n" +
-            $"🏁 Final score: <b>{target} / {target} plates</b>\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━";
+        var html =
+            $"<h1>🏆 ALL {target} PLATES COLLECTED! 🏆</h1>" +
+            "<h2>🌟 LEGENDARY ACHIEVEMENT UNLOCKED! 🌟</h2>" +
+            $"<p>You and your crew have spotted license plates from all {target} required states! " +
+            "You've conquered every plate on your list! 🇺🇸</p>" +
+            $"<h3>🗺️ {tripName}</h3>" +
+            "<ul>" +
+            $"<li>📅 Started: {startedAt}</li>" +
+            $"<li>⏱️ Duration: {durationText}</li>" +
+            $"<li>🏁 Final score: <b>{target} / {target} plates</b></li>" +
+            "</ul>";
 
         if (leaderboard.Count > 0)
         {
-            msg += "\n\n🏆 <b>FINAL LEADERBOARD:</b>\n" + string.Join("\n", leaderboard);
+            html += "<h3>🏆 Final Leaderboard</h3><table>" +
+                    "<tr><th>#</th><th>Player</th><th>States</th></tr>" +
+                    string.Join("", leaderboard) +
+                    "</table>";
         }
 
-        msg +=
-            $"\n\n🗺️ <b>ALL {target} PLATES SPOTTED:</b>\n{foundStatesList}\n\n" +
-            "🎉🥳🎊 <b>CONGRATULATIONS, ROAD TRIP LEGENDS!</b> 🎊🥳🎉\n\n" +
-            "🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨🎆🎇✨";
+        html +=
+            $"<h3>🗺️ All {target} plates spotted</h3>" +
+            $"<p>{foundStatesList}</p>" +
+            "<h2>🎉 CONGRATULATIONS, ROAD TRIP LEGENDS! 🎉</h2>";
 
-        await _bot.SendMessage(chatId, msg, parseMode: ParseMode.Html);
+        await SendRichHtmlAsync(chatId, html);
+    }
+
+    // Sends a Telegram rich message (tables, headings, lists) via the Bot API's
+    // sendRichMessage method, introduced in Bot API 10.1.
+    private async Task SendRichHtmlAsync(long chatId, string html)
+    {
+        await _bot.SendRichMessage(chatId, new InputRichMessage { Html = html });
     }
 
     private static string DisplayName(Telegram.Bot.Types.User? user)
@@ -334,7 +343,7 @@ public class BotCommandHandler
         return name.Length > 0 ? name : user.Username ?? string.Empty;
     }
 
-    private async Task<string> HandleStatus(long chatId)
+    private async Task<string?> HandleStatus(long chatId)
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
@@ -350,13 +359,13 @@ public class BotCommandHandler
         var bar = BuildProgressBar(sightings.Count, target);
 
         var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
-        var result = $"🗺 <b>{System.Net.WebUtility.HtmlEncode(state.TripName)}</b>\n" +
-                     $"Started: {startedAt}\n" +
-                     $"{bar} {sightings.Count}/{target}\n\n" +
-                     $"<b>Found:</b> {stateList}";
+        var html = $"<h2>🗺 {System.Net.WebUtility.HtmlEncode(state.TripName)}</h2>" +
+                   $"<p>Started: {startedAt}</p>" +
+                   $"<p>{bar} {sightings.Count}/{target}</p>" +
+                   $"<p><b>Found:</b> {stateList}</p>";
 
         if (skipped.Count > 0)
-            result += $"\n<b>Skipped:</b> {string.Join(", ", skipped.OrderBy(s => s))}";
+            html += $"<p><b>Skipped:</b> {string.Join(", ", skipped.OrderBy(s => s))}</p>";
 
         var leaderboard = sightings
             .Where(s => s.UserId != 0)
@@ -366,15 +375,19 @@ public class BotCommandHandler
             {
                 var spotterName = g.Select(s => s.UserName)
                     .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Unknown";
-                return $"{System.Net.WebUtility.HtmlEncode(spotterName)} — {g.Count()}";
+                return (Name: System.Net.WebUtility.HtmlEncode(spotterName), Count: g.Count());
             })
             .ToList();
 
         if (leaderboard.Count > 0)
-            result += "\n\n<b>Leaderboard:</b>\n" +
-                      string.Join("\n", leaderboard.Select((line, i) => $"{i + 1}. {line}"));
+        {
+            html += "<h3>Leaderboard</h3><table><tr><th>#</th><th>Player</th><th>States</th></tr>" +
+                    string.Join("", leaderboard.Select((entry, i) => $"<tr><td>{i + 1}</td><td>{entry.Name}</td><td>{entry.Count}</td></tr>")) +
+                    "</table>";
+        }
 
-        return result;
+        await SendRichHtmlAsync(chatId, html);
+        return null;
     }
 
     private async Task<string> HandleMissing(long chatId)
@@ -416,13 +429,13 @@ public class BotCommandHandler
         return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/{target}.";
     }
 
-    private async Task<string> HandleHistory(long chatId)
+    private async Task<string?> HandleHistory(long chatId)
     {
         var history = await _stateService.GetHistoryAsync(chatId);
         if (history.Count == 0)
             return "No previous trips yet. Start a new trip with /newtrip!";
 
-        var lines = history.Take(25).Select((t, i) =>
+        var rows = history.Take(25).Select((t, i) =>
         {
             var sightings = _stateService.DeserializeSightings(t.SeenStatesJson);
             var skipped = _stateService.DeserializeSkippedStates(t.SkippedStatesJson);
@@ -435,24 +448,36 @@ public class BotCommandHandler
                 .OrderByDescending(g => g.Count())
                 .Select(g => g.Select(s => s.UserName).FirstOrDefault(userName => !string.IsNullOrEmpty(userName)) ?? "Unknown")
                 .FirstOrDefault();
-            var mvp = topSpotter is not null ? $" 🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "";
-            var skippedNote = skipped.Count > 0 ? $" (skipped: {string.Join(", ", skipped.OrderBy(s => s))})" : "";
-            return $"{i + 1}. <b>{name}</b> ({date}) — {sightings.Count}/{tripTarget} plates{mvp}{skippedNote}";
+            var mvp = topSpotter is not null ? $"🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "—";
+            var skippedNote = skipped.Count > 0 ? string.Join(", ", skipped.OrderBy(s => s)) : "—";
+            return $"<tr><td>{i + 1}</td><td>{name}</td><td>{date}</td><td>{sightings.Count}/{tripTarget}</td><td>{mvp}</td><td>{skippedNote}</td></tr>";
         });
 
-        return "📋 <b>Trip History</b>\n\n" + string.Join("\n", lines);
+        var html = "<h2>📋 Trip History</h2><table>" +
+                   "<tr><th>#</th><th>Trip</th><th>Date</th><th>Score</th><th>MVP</th><th>Skipped</th></tr>" +
+                   string.Join("", rows) +
+                   "</table>";
+
+        await SendRichHtmlAsync(chatId, html);
+        return null;
     }
 
-    private static string GetHelp() =>
-        "<b>License Plate Game 🚗</b>\n\n" +
-        "/saw CA — log a state you spotted (abbreviation or full name)\n" +
-        "/skip HI — skip a state so it's not required to complete the game\n" +
-        "/status — see your progress\n" +
-        "/missing — see what's left\n" +
-        "/undo — remove the last logged state\n" +
-        "/newtrip [name] — start a fresh trip\n" +
-        "/history — view results from previous trips\n" +
-        "/help — show this message";
+    private async Task<string?> HandleHelp(long chatId)
+    {
+        var html = "<h2>License Plate Game 🚗</h2><ul>" +
+                   "<li><code>/saw CA</code> — log a state you spotted (abbreviation or full name)</li>" +
+                   "<li><code>/skip HI</code> — skip a state so it's not required to complete the game</li>" +
+                   "<li><code>/status</code> — see your progress</li>" +
+                   "<li><code>/missing</code> — see what's left</li>" +
+                   "<li><code>/undo</code> — remove the last logged state</li>" +
+                   "<li><code>/newtrip [name]</code> — start a fresh trip</li>" +
+                   "<li><code>/history</code> — view results from previous trips</li>" +
+                   "<li><code>/help</code> — show this message</li>" +
+                   "</ul>";
+
+        await SendRichHtmlAsync(chatId, html);
+        return null;
+    }
 
     private static string BuildProgressBar(int current, int total)
     {
