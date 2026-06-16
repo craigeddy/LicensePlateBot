@@ -1,16 +1,27 @@
 # License Plate Bot 🚗
 
-A Telegram bot for playing the license plate game on road trips. Track which US states you've spotted, start fresh for each trip, and play together in a shared Telegram chat.
+A Telegram bot for playing the license plate game on road trips. Track which US states you've spotted, start fresh for each trip, and play together in a shared Telegram chat. Supports two game modes: collaborative and race.
+
+## Game Modes
+
+### Collaborative (default)
+All players in the chat share one list of seen states and work together to collect all 51 plates (50 states + DC). The group wins when the target is reached.
+
+### Race Mode 🏁
+Each player builds their own independent collection of all 51 plates. The first player to finish wins, with 2nd and 3rd place announcements as others complete their sets. Races can span weeks — the bot tracks progress across sessions so there's no pressure to finish in one sitting.
+
+Start a race with `/newrace [name]`. Before logging your first plate, you can `/skip` states that are unlikely to appear (e.g. HI or AK on a continental trip). Once you log your first sighting, skips are locked in.
 
 ## Features
 
-- `/saw CA` or `/saw California` or `/saw DC` — log a state you spotted; the bot credits you by name and notes if someone already got it. When you collect all required plates, the bot sends an elaborate celebration with trip stats, duration, and a final leaderboard table
-- `/skip HI` — remove a state from the required list so it doesn't block completion; skipped states appear in `/status` and are noted in `/history`
-- `/status` — see your progress with a visual progress bar and a per-player leaderboard table; lists any skipped states
-- `/missing` — see which states you still need (excludes skipped states)
-- `/undo` — remove the last logged state
-- `/newtrip [name]` — start fresh for a new trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`)
-- `/history` — view results from all previous trips as a table, including the top spotter and any skipped states for each
+- `/saw CA` or `/saw California` or `/saw DC` — log a state you spotted; in collaborative mode the bot credits the first spotter; in race mode it tracks your personal collection and announces when you finish
+- `/skip HI` — in collaborative mode, removes a state from the group's required list; in race mode, removes it from your personal required list (only available before your first sighting)
+- `/status` — in collaborative mode, shows group progress and a per-player leaderboard; in race mode, shows a race standings table with each player's count and finish placement
+- `/missing` — shows which states you still need (collaborative: shared list; race: your personal list)
+- `/undo` — removes your last logged state; in race mode, also removes you from the finisher ledger if you had finished
+- `/newtrip [name]` — start a fresh collaborative trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`)
+- `/newrace [name]` — start a race; if no name is given, the bot asks for one (default: `Race MM/DD/YYYY`)
+- `/history` — view results from all previous trips as a table; race trips show the winner and finisher count
 - **Admin broadcast** — send a plain-text message to all active game chats, or to a specific chat, via an HTTP trigger or the `/broadcast` Telegram command (admin-only)
 
 State is stored per Telegram chat, so any member of a group chat can log plates and everyone sees the updates in real time.
@@ -273,13 +284,14 @@ To find your Telegram user ID, message [@userinfobot](https://t.me/userinfobot).
 
 | Command | Description | Example |
 |---|---|---|
-| `/saw [state]` | Log a state you spotted by abbreviation or full name (including DC); credits you by name; omit the state and the bot will prompt you | `/saw CA` or `/saw California` or `/saw DC` |
-| `/skip [state]` | Remove a state from the required list so it doesn't block completion; logging a skipped state later automatically un-skips it | `/skip HI` or `/skip Hawaii` |
-| `/status` | Show progress, states found, skipped states, and a per-player leaderboard | `/status` |
-| `/missing` | List states not yet found (excludes skipped states) | `/missing` |
-| `/undo` | Remove the last logged state | `/undo` |
-| `/newtrip [name]` | Start a fresh trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`); current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
-| `/history` | Show results from all previous trips in this chat, including any skipped states | `/history` |
+| `/saw [state]` | Log a state you spotted by abbreviation or full name (including DC); in collaborative mode credits the first spotter; in race mode tracks your personal count and announces when you finish | `/saw CA` or `/saw California` or `/saw DC` |
+| `/skip [state]` | Remove a state from the required list; in collaborative mode affects the whole group; in race mode is per-player and only allowed before your first sighting | `/skip HI` or `/skip Hawaii` |
+| `/status` | Show progress; in collaborative mode shows group progress and leaderboard; in race mode shows a standings table with each player's count and finish placement | `/status` |
+| `/missing` | List states not yet found; in race mode shows your personal missing states | `/missing` |
+| `/undo` | Remove your last logged state; in race mode removes you from the finisher ledger if you had finished | `/undo` |
+| `/newtrip [name]` | Start a fresh collaborative trip; if no name is given, the bot asks for one (default: `Road Trip MM/DD/YYYY`); current trip is saved to history if any states were logged | `/newtrip Colorado 2026` |
+| `/newrace [name]` | Start a race where each player collects all 51 plates independently — first to finish wins; skips can be set before your first plate | `/newrace Summer 2026` |
+| `/history` | Show results from all previous trips in this chat; race trips show the winner and finisher count | `/history` |
 | `/help` | Show command reference | `/help` |
 
 ---
