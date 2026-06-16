@@ -50,7 +50,8 @@ public class BotCommandHandler
         new() { Command = "status",   Description = "See your current progress" },
         new() { Command = "missing",  Description = "See which states are still needed" },
         new() { Command = "undo",     Description = "Remove the last logged state" },
-        new() { Command = "newtrip",  Description = "Start a fresh trip" },
+        new() { Command = "newtrip",  Description = "Start a fresh collaborative trip" },
+        new() { Command = "newrace",  Description = "Start a race — each player collects all 51 states independently" },
         new() { Command = "history",  Description = "View results from previous trips" },
         new() { Command = "help",     Description = "Show available commands" },
     ];
@@ -92,11 +93,12 @@ public class BotCommandHandler
             reply = command switch
             {
                 "/newtrip" or "/start" => await HandleNewTrip(chatId, args),
+                "/newrace"             => await HandleNewRace(chatId, args),
                 "/saw"                 => await HandleSaw(chatId, args, message.From),
-                "/skip"                => await HandleSkip(chatId, args),
+                "/skip"                => await HandleSkip(chatId, args, message.From),
                 "/status"              => await HandleStatus(chatId),
-                "/missing"             => await HandleMissing(chatId),
-                "/undo"                => await HandleUndo(chatId),
+                "/missing"             => await HandleMissing(chatId, message.From),
+                "/undo"                => await HandleUndo(chatId, message.From),
                 "/history"             => await HandleHistory(chatId),
                 "/help"                => await HandleHelp(chatId),
                 "/broadcast"           => await HandleBroadcast(chatId, args, message.From),
@@ -117,7 +119,7 @@ public class BotCommandHandler
             {
                 state.PendingCommand = null;
                 await _stateService.SaveAsync(state);
-                reply = await HandleSkip(chatId, parts);
+                reply = await HandleSkip(chatId, parts, message.From);
             }
             else if (state.PendingCommand is { } pc && pc.StartsWith("newtrip:", StringComparison.Ordinal))
             {
@@ -125,6 +127,13 @@ public class BotCommandHandler
                 state.PendingCommand = null;
                 await _stateService.SaveAsync(state);
                 reply = await HandleNewTrip(chatId, parts, pendingDefault);
+            }
+            else if (state.PendingCommand is { } pc2 && pc2.StartsWith("newrace:", StringComparison.Ordinal))
+            {
+                var pendingDefault = pc2["newrace:".Length..];
+                state.PendingCommand = null;
+                await _stateService.SaveAsync(state);
+                reply = await HandleNewRace(chatId, parts, pendingDefault);
             }
             else
             {
@@ -158,6 +167,30 @@ public class BotCommandHandler
         return $"🚗 <b>New trip started: {System.Net.WebUtility.HtmlEncode(tripName)}</b>\n\nReady to collect all 51 plates! Use /saw CA to log a plate.";
     }
 
+    private async Task<string?> HandleNewRace(long chatId, string[] args, string? pendingDefault = null)
+    {
+        if (args.Length == 0)
+        {
+            var defaultName = $"Race {DateTime.UtcNow.ToString("MM/dd/yyyy", System.Globalization.CultureInfo.InvariantCulture)}";
+            var pending = await _stateService.GetOrCreateAsync(chatId);
+            pending.PendingCommand = $"newrace:{defaultName}";
+            await _stateService.SaveAsync(pending);
+            await _bot.SendMessage(chatId,
+                $"What would you like to name this race? Reply with a name, or send <b>skip</b> to use \"{defaultName}\".",
+                parseMode: ParseMode.Html,
+                replyMarkup: new ForceReplyMarkup());
+            return null;
+        }
+
+        var raceName = string.Join(" ", args).Equals("skip", StringComparison.OrdinalIgnoreCase)
+            ? (pendingDefault ?? $"Race {DateTime.UtcNow:MM/dd/yyyy}")
+            : string.Join(" ", args);
+        await _stateService.ResetAsync(chatId, raceName, raceMode: true);
+        return $"🏁 <b>Race started: {System.Net.WebUtility.HtmlEncode(raceName)}</b>\n\n" +
+               "Each player collects all 51 plates independently — first to finish wins! 🏆\n\n" +
+               "Use /saw CA to log a plate. You can /skip states before logging your first one.";
+    }
+
     private async Task<string?> HandleSaw(long chatId, string[] args, Telegram.Bot.Types.User? from)
     {
         if (args.Length == 0)
@@ -183,42 +216,102 @@ public class BotCommandHandler
         var state = await _stateService.GetOrCreateAsync(chatId);
         state.PendingCommand = null;
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
-        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
-
-        var existing = sightings.FirstOrDefault(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null)
-        {
-            var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {System.Net.WebUtility.HtmlEncode(name)}" : "";
-            var currentTarget = 51 - skipped.Count;
-            return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/{currentTarget}.";
-        }
-
-        // If the state was skipped, automatically un-skip it when the player logs it
-        var skippedEntry = skipped.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
-        var wasSkipped = skippedEntry is not null;
-        if (wasSkipped) skipped.Remove(skippedEntry!);
-
         var displayName = DisplayName(from);
-        sightings.Add(new SightingRecord(abbr, from?.Id ?? 0, displayName));
-        state.SeenStatesJson = _stateService.SerializeSightings(sightings);
-        state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
-        await _stateService.SaveAsync(state);
+        var userId = from?.Id ?? 0;
 
-        var target = 51 - skipped.Count;
-        var remaining = target - sightings.Count;
-        var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
-        var unskipNote = wasSkipped ? " (removed from skip list)" : "";
-
-        if (sightings.Count == target)
+        if (state.RaceMode)
         {
-            await SendAllStatesFoundCelebrationAsync(chatId, state, sightings, skipped);
-            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n🏁 <b>{target}/{target} — COMPLETE!</b> 🎆";
-        }
+            // Per-player duplicate check
+            if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase) && s.UserId == userId))
+            {
+                var myCount = sightings.Count(s => s.UserId == userId && AllStates.Contains(s.State));
+                var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+                var mySkipCount = raceSkips.TryGetValue(userId, out var mySkips) ? mySkips.Count : 0;
+                var myTarget = AllStates.Count - mySkipCount;
+                return $"👀 You already logged <b>{StateNames[abbr]}</b> ({abbr})! Your count: {myCount}/{myTarget}.";
+            }
 
-        return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n{sightings.Count}/{target} plates found — {remaining} to go.";
+            // Auto-unskip from this player's personal skip list if they log a skipped state
+            var raceSkipsAll = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            var wasRaceSkipped = false;
+            if (raceSkipsAll.TryGetValue(userId, out var playerSkips))
+            {
+                var skippedEntry = playerSkips.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
+                if (skippedEntry is not null)
+                {
+                    playerSkips.Remove(skippedEntry);
+                    raceSkipsAll[userId] = playerSkips;
+                    state.RaceSkipsJson = _stateService.SerializeRaceSkips(raceSkipsAll);
+                    wasRaceSkipped = true;
+                }
+            }
+
+            sightings.Add(new SightingRecord(abbr, userId, displayName));
+            state.SeenStatesJson = _stateService.SerializeSightings(sightings);
+            await _stateService.SaveAsync(state);
+
+            // Recompute per-player target and count
+            var currentRaceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            var currentPlayerSkips = currentRaceSkips.TryGetValue(userId, out var ps) ? ps : [];
+            var myTarget2 = AllStates.Count - currentPlayerSkips.Count;
+            var myStates = sightings
+                .Where(s => s.UserId == userId)
+                .Select(s => s.State)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var myCount2 = myStates.Count;
+            var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
+            var unskipNote = wasRaceSkipped ? " (removed from your skip list)" : "";
+
+            // Check if this player has finished
+            var requiredStates = AllStates.Where(s => !currentPlayerSkips.Contains(s, StringComparer.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (requiredStates.IsSubsetOf(myStates))
+            {
+                await HandleRaceFinisher(chatId, state, sightings, from, displayName);
+                return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n🏁 <b>{myCount2}/{myTarget2} — YOU FINISHED!</b> 🎆";
+            }
+
+            var remaining = myTarget2 - myCount2;
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\nYour count: {myCount2}/{myTarget2} — {remaining} to go.";
+        }
+        else
+        {
+            // Collaborative mode
+            var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+
+            var existing = sightings.FirstOrDefault(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {System.Net.WebUtility.HtmlEncode(name)}" : "";
+                var currentTarget = 51 - skipped.Count;
+                return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/{currentTarget}.";
+            }
+
+            // If the state was skipped, automatically un-skip it when the player logs it
+            var skippedEntry = skipped.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
+            var wasSkipped = skippedEntry is not null;
+            if (wasSkipped) skipped.Remove(skippedEntry!);
+
+            sightings.Add(new SightingRecord(abbr, userId, displayName));
+            state.SeenStatesJson = _stateService.SerializeSightings(sightings);
+            state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
+            await _stateService.SaveAsync(state);
+
+            var target = 51 - skipped.Count;
+            var remaining = target - sightings.Count;
+            var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
+            var unskipNote = wasSkipped ? " (removed from skip list)" : "";
+
+            if (sightings.Count == target)
+            {
+                await SendAllStatesFoundCelebrationAsync(chatId, state, sightings, skipped);
+                return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n🏁 <b>{target}/{target} — COMPLETE!</b> 🎆";
+            }
+
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n{sightings.Count}/{target} plates found — {remaining} to go.";
+        }
     }
 
-    private async Task<string?> HandleSkip(long chatId, string[] args)
+    private async Task<string?> HandleSkip(long chatId, string[] args, Telegram.Bot.Types.User? from)
     {
         if (args.Length == 0)
         {
@@ -243,45 +336,138 @@ public class BotCommandHandler
         var state = await _stateService.GetOrCreateAsync(chatId);
         state.PendingCommand = null;
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
-        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
-        if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
-            return $"❓ You've already spotted <b>{StateNames[abbr]}</b> ({abbr}) — can't skip a state you've already found.";
+        if (state.RaceMode)
+        {
+            var userId = from?.Id ?? 0;
 
-        if (skipped.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
-            return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on the skip list.";
+            // Lock skips once the player has logged their first state
+            if (sightings.Any(s => s.UserId == userId))
+                return "⚠️ You can only skip states before logging your first plate in a race.";
 
-        if (skipped.Count >= 50)
-            return "⚠️ You must keep at least one state required to complete the game.";
+            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            if (!raceSkips.TryGetValue(userId, out var playerSkips))
+                playerSkips = [];
 
-        skipped.Add(abbr);
-        state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
+            if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase) && s.UserId == userId))
+                return $"❓ You've already spotted <b>{StateNames[abbr]}</b> ({abbr}) — can't skip a state you've already found.";
+
+            if (playerSkips.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+                return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on your skip list.";
+
+            if (playerSkips.Count >= 50)
+                return "⚠️ You must keep at least one state required to complete the race.";
+
+            playerSkips.Add(abbr);
+            raceSkips[userId] = playerSkips;
+            state.RaceSkipsJson = _stateService.SerializeRaceSkips(raceSkips);
+            await _stateService.SaveAsync(state);
+
+            var myTarget = AllStates.Count - playerSkips.Count;
+            return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) skipped. You now need {myTarget} plates to win the race.";
+        }
+        else
+        {
+            var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+
+            if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+                return $"❓ You've already spotted <b>{StateNames[abbr]}</b> ({abbr}) — can't skip a state you've already found.";
+
+            if (skipped.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+                return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on the skip list.";
+
+            if (skipped.Count >= 50)
+                return "⚠️ You must keep at least one state required to complete the game.";
+
+            skipped.Add(abbr);
+            state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
+            await _stateService.SaveAsync(state);
+
+            var target = 51 - skipped.Count;
+            return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) skipped. You now need {target} plates to complete the game.";
+        }
+    }
+
+    private async Task HandleRaceFinisher(long chatId, TripState state, List<SightingRecord> sightings, Telegram.Bot.Types.User? from, string displayName)
+    {
+        var userId = from?.Id ?? 0;
+        var finishers = _stateService.DeserializeFinishers(state.FinishersJson);
+
+        // Guard against double-finisher (e.g. two rapid /saw calls)
+        if (finishers.Any(f => f.UserId == userId))
+            return;
+
+        finishers.Add(new RaceFinisher(userId, displayName, DateTimeOffset.UtcNow));
+        state.FinishersJson = _stateService.SerializeFinishers(finishers);
         await _stateService.SaveAsync(state);
 
-        var target = 51 - skipped.Count;
-        return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) skipped. You now need {target} plates to complete the game.";
+        var placement = finishers.Count;
+        var placementText = placement switch
+        {
+            1 => "1st",
+            2 => "2nd",
+            3 => "3rd",
+            _ => $"{placement}th"
+        };
+
+        var duration = DateTimeOffset.UtcNow - state.StartedAt;
+        var durationText = FormatDuration(duration);
+        var tripName = System.Net.WebUtility.HtmlEncode(state.TripName);
+        var safeDisplayName = System.Net.WebUtility.HtmlEncode(displayName is { Length: > 0 } ? displayName : "Someone");
+
+        if (placement == 1)
+        {
+            // Load this player's states for the found list
+            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
+            var myStates = sightings
+                .Where(s => s.UserId == userId)
+                .Select(s => s.State)
+                .OrderBy(s => s);
+            var statesList = string.Join(", ", myStates);
+            var myTarget = AllStates.Count - playerSkips.Count;
+
+            var html =
+                $"<h1>🏆 {safeDisplayName} WINS THE RACE! 🏆</h1>" +
+                $"<h2>🥇 First to collect all {myTarget} plates!</h2>" +
+                $"<h3>🗺️ {tripName}</h3>" +
+                "<ul>" +
+                $"<li>📅 Race started: {state.StartedAt:MMM d, yyyy}</li>" +
+                $"<li>⏱️ Time to finish: {durationText}</li>" +
+                $"<li>🏁 Final score: <b>{myTarget} / {myTarget} plates</b></li>" +
+                "</ul>" +
+                $"<h3>🗺️ All {myTarget} plates</h3>" +
+                $"<p>{statesList}</p>" +
+                "<p>🏁 Race continues — who will finish 2nd? Keep spotting!</p>";
+
+            await SendRichHtmlAsync(chatId, html);
+        }
+        else
+        {
+            // Build finisher standings table
+            var standingsRows = finishers.Select((f, i) =>
+            {
+                var medal = i switch { 0 => "🥇", 1 => "🥈", 2 => "🥉", _ => $"{i + 1}." };
+                var finishDate = f.FinishedAt.ToString("MMM d");
+                return $"<tr><td>{medal}</td><td>{System.Net.WebUtility.HtmlEncode(f.UserName is { Length: > 0 } n ? n : "Unknown")}</td><td>{finishDate}</td></tr>";
+            });
+
+            var html =
+                $"<h2>🎉 {safeDisplayName} finishes in <b>{placementText} place</b>!</h2>" +
+                $"<p>⏱️ Time to finish: {durationText}</p>" +
+                "<h3>Race Standings</h3><table>" +
+                "<tr><th>#</th><th>Player</th><th>Finished</th></tr>" +
+                string.Join("", standingsRows) +
+                "</table>";
+
+            await SendRichHtmlAsync(chatId, html);
+        }
     }
 
     private async Task SendAllStatesFoundCelebrationAsync(long chatId, TripState state, List<SightingRecord> sightings, List<string> skippedStates)
     {
         var duration = DateTimeOffset.UtcNow - state.StartedAt;
-        string durationText;
-        if (duration.TotalDays >= 1)
-        {
-            var days = (int)duration.TotalDays;
-            var hours = duration.Hours;
-            durationText = hours > 0 ? $"{days} day{(days == 1 ? "" : "s")} and {hours} hour{(hours == 1 ? "" : "s")}" : $"{days} day{(days == 1 ? "" : "s")}";
-        }
-        else if (duration.TotalHours >= 1)
-        {
-            var hrs = (int)duration.TotalHours;
-            durationText = $"{hrs} hour{(hrs == 1 ? "" : "s")}";
-        }
-        else
-        {
-            var mins = Math.Max(1, (int)duration.TotalMinutes);
-            durationText = $"{mins} minute{(mins == 1 ? "" : "s")}";
-        }
+        var durationText = FormatDuration(duration);
 
         var leaderboard = sightings
             .Where(s => s.UserId != 0)
@@ -343,90 +529,226 @@ public class BotCommandHandler
         return name.Length > 0 ? name : user.Username ?? string.Empty;
     }
 
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalDays >= 1)
+        {
+            var days = (int)duration.TotalDays;
+            var hours = duration.Hours;
+            return hours > 0 ? $"{days} day{(days == 1 ? "" : "s")} and {hours} hour{(hours == 1 ? "" : "s")}" : $"{days} day{(days == 1 ? "" : "s")}";
+        }
+        if (duration.TotalHours >= 1)
+        {
+            var hrs = (int)duration.TotalHours;
+            return $"{hrs} hour{(hrs == 1 ? "" : "s")}";
+        }
+        var mins = Math.Max(1, (int)duration.TotalMinutes);
+        return $"{mins} minute{(mins == 1 ? "" : "s")}";
+    }
+
     private async Task<string?> HandleStatus(long chatId)
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
-        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
-        if (sightings.Count == 0 && skipped.Count == 0)
-            return "No plates logged yet! Use /saw CA to log your first one.";
-
-        var target = 51 - skipped.Count;
-        var stateList = sightings.Count > 0
-            ? string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s))
-            : "none yet";
-        var bar = BuildProgressBar(sightings.Count, target);
-
-        var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
-        var html = $"<h2>🗺 {System.Net.WebUtility.HtmlEncode(state.TripName)}</h2>" +
-                   $"<p>Started: {startedAt}</p>" +
-                   $"<p>{bar} {sightings.Count}/{target}</p>" +
-                   $"<p><b>Found:</b> {stateList}</p>";
-
-        if (skipped.Count > 0)
-            html += $"<p><b>Skipped:</b> {string.Join(", ", skipped.OrderBy(s => s))}</p>";
-
-        var leaderboard = sightings
-            .Where(s => s.UserId != 0)
-            .GroupBy(s => s.UserId)
-            .OrderByDescending(g => g.Count())
-            .Select(g =>
-            {
-                var spotterName = g.Select(s => s.UserName)
-                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Unknown";
-                return (Name: System.Net.WebUtility.HtmlEncode(spotterName), Count: g.Count());
-            })
-            .ToList();
-
-        if (leaderboard.Count > 0)
+        if (state.RaceMode)
         {
-            html += "<h3>Leaderboard</h3><table><tr><th>#</th><th>Player</th><th>States</th></tr>" +
-                    string.Join("", leaderboard.Select((entry, i) => $"<tr><td>{i + 1}</td><td>{entry.Name}</td><td>{entry.Count}</td></tr>")) +
-                    "</table>";
+            var finishers = _stateService.DeserializeFinishers(state.FinishersJson);
+            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+
+            if (sightings.Count == 0 && finishers.Count == 0)
+                return "No plates logged yet! Use /saw CA to log your first one. You can /skip states before your first plate.";
+
+            // Build per-player standings
+            var playerGroups = sightings
+                .Where(s => s.UserId != 0)
+                .GroupBy(s => s.UserId)
+                .Select(g =>
+                {
+                    var name = g.Select(s => s.UserName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? "Unknown";
+                    var count = g.Count(s => AllStates.Contains(s.State));
+                    var finisher = finishers.FirstOrDefault(f => f.UserId == g.Key);
+                    var playerSkips = raceSkips.TryGetValue(g.Key, out var ps) ? ps : [];
+                    var target = AllStates.Count - playerSkips.Count;
+                    return (UserId: g.Key, Name: name, Count: count, Target: target, Finisher: finisher);
+                })
+                .OrderBy(p => p.Finisher is null ? 1 : 0)
+                .ThenBy(p => p.Finisher?.FinishedAt)
+                .ThenByDescending(p => p.Count)
+                .ToList();
+
+            var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
+            var html = $"<h2>🏁 {System.Net.WebUtility.HtmlEncode(state.TripName)} — Race Mode</h2>" +
+                       $"<p>Started: {startedAt}</p>";
+
+            if (playerGroups.Count > 0)
+            {
+                var leader = playerGroups.First();
+                var leaderBar = BuildProgressBar(leader.Count, leader.Target);
+                html += $"<p>Leader: {leaderBar} {leader.Count}/{leader.Target}</p>";
+
+                var rows = playerGroups.Select((p, i) =>
+                {
+                    var medal = i switch { 0 => "🥇", 1 => "🥈", 2 => "🥉", _ => $"{i + 1}." };
+                    var status = p.Finisher is not null
+                        ? $"✅ Finished {p.Finisher.FinishedAt:MMM d}"
+                        : $"{p.Count}/{p.Target}";
+                    return $"<tr><td>{medal}</td><td>{System.Net.WebUtility.HtmlEncode(p.Name)}</td><td>{status}</td></tr>";
+                });
+
+                html += "<h3>Race Standings</h3><table>" +
+                        "<tr><th>#</th><th>Player</th><th>Progress</th></tr>" +
+                        string.Join("", rows) +
+                        "</table>";
+            }
+            else
+            {
+                html += "<p>No plates logged yet — use /saw CA to start!</p>";
+            }
+
+            await SendRichHtmlAsync(chatId, html);
+            return null;
         }
+        else
+        {
+            var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
-        await SendRichHtmlAsync(chatId, html);
-        return null;
+            if (sightings.Count == 0 && skipped.Count == 0)
+                return "No plates logged yet! Use /saw CA to log your first one.";
+
+            var target = 51 - skipped.Count;
+            var stateList = sightings.Count > 0
+                ? string.Join(", ", sightings.Select(s => s.State).OrderBy(s => s))
+                : "none yet";
+            var bar = BuildProgressBar(sightings.Count, target);
+
+            var startedAt = state.StartedAt.ToString("MMM d, yyyy 'at' h:mm tt UTC");
+            var html = $"<h2>🗺 {System.Net.WebUtility.HtmlEncode(state.TripName)}</h2>" +
+                       $"<p>Started: {startedAt}</p>" +
+                       $"<p>{bar} {sightings.Count}/{target}</p>" +
+                       $"<p><b>Found:</b> {stateList}</p>";
+
+            if (skipped.Count > 0)
+                html += $"<p><b>Skipped:</b> {string.Join(", ", skipped.OrderBy(s => s))}</p>";
+
+            var leaderboard = sightings
+                .Where(s => s.UserId != 0)
+                .GroupBy(s => s.UserId)
+                .OrderByDescending(g => g.Count())
+                .Select(g =>
+                {
+                    var spotterName = g.Select(s => s.UserName)
+                        .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Unknown";
+                    return (Name: System.Net.WebUtility.HtmlEncode(spotterName), Count: g.Count());
+                })
+                .ToList();
+
+            if (leaderboard.Count > 0)
+            {
+                html += "<h3>Leaderboard</h3><table><tr><th>#</th><th>Player</th><th>States</th></tr>" +
+                        string.Join("", leaderboard.Select((entry, i) => $"<tr><td>{i + 1}</td><td>{entry.Name}</td><td>{entry.Count}</td></tr>")) +
+                        "</table>";
+            }
+
+            await SendRichHtmlAsync(chatId, html);
+            return null;
+        }
     }
 
-    private async Task<string> HandleMissing(long chatId)
+    private async Task<string> HandleMissing(long chatId, Telegram.Bot.Types.User? from)
+    {
+        var state = await _stateService.GetOrCreateAsync(chatId);
+        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
+
+        if (state.RaceMode)
+        {
+            var userId = from?.Id ?? 0;
+            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
+            var mySeenStates = sightings
+                .Where(s => s.UserId == userId)
+                .Select(s => s.State)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missing = AllStates
+                .Where(s => !mySeenStates.Contains(s) && !playerSkips.Contains(s, StringComparer.OrdinalIgnoreCase))
+                .OrderBy(s => s)
+                .ToList();
+
+            if (missing.Count == 0)
+                return "🎉 You've found all your required plates! Nothing missing!";
+
+            var myTarget = AllStates.Count - playerSkips.Count;
+            var list = string.Join(", ", missing);
+            return $"🔍 <b>Your {missing.Count} missing states ({mySeenStates.Count}/{myTarget}):</b>\n{list}";
+        }
+        else
+        {
+            var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+            var seenOrSkipped = sightings.Select(s => s.State)
+                .Concat(skipped)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missing = AllStates
+                .Where(s => !seenOrSkipped.Contains(s))
+                .OrderBy(s => s)
+                .ToList();
+
+            if (missing.Count == 0)
+                return "🎉 You've found all required plates! Nothing missing!";
+
+            var list = string.Join(", ", missing);
+            return $"🔍 <b>{missing.Count} states still needed:</b>\n{list}";
+        }
+    }
+
+    private async Task<string> HandleUndo(long chatId, Telegram.Bot.Types.User? from)
     {
         var state = await _stateService.GetOrCreateAsync(chatId);
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
         var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
-        var seenOrSkipped = sightings.Select(s => s.State)
-            .Concat(skipped)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var missing = AllStates
-            .Where(s => !seenOrSkipped.Contains(s))
-            .OrderBy(s => s)
-            .ToList();
+        if (state.RaceMode && from is not null)
+        {
+            var userId = from.Id;
+            var myEntries = sightings
+                .Select((s, i) => (s, i))
+                .Where(x => x.s.UserId == userId)
+                .ToList();
 
-        if (missing.Count == 0)
-            return "🎉 You've found all required plates! Nothing missing!";
+            if (myEntries.Count == 0)
+                return "Nothing to undo — you haven't logged any states yet.";
 
-        var list = string.Join(", ", missing);
-        return $"🔍 <b>{missing.Count} states still needed:</b>\n{list}";
-    }
+            var (lastEntry, lastIndex) = myEntries[^1];
+            sightings.RemoveAt(lastIndex);
+            state.SeenStatesJson = _stateService.SerializeSightings(sightings);
 
-    private async Task<string> HandleUndo(long chatId)
-    {
-        var state = await _stateService.GetOrCreateAsync(chatId);
-        var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
-        var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+            // If they were a finisher, remove them from the finisher list
+            var finishers = _stateService.DeserializeFinishers(state.FinishersJson);
+            if (finishers.RemoveAll(f => f.UserId == userId) > 0)
+                state.FinishersJson = _stateService.SerializeFinishers(finishers);
 
-        if (sightings.Count == 0)
-            return "Nothing to undo — no states logged yet.";
+            await _stateService.SaveAsync(state);
 
-        var removed = sightings[^1];
-        sightings.RemoveAt(sightings.Count - 1);
-        state.SeenStatesJson = _stateService.SerializeSightings(sightings);
-        await _stateService.SaveAsync(state);
+            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
+            var myTarget = AllStates.Count - playerSkips.Count;
+            var myCount = sightings.Count(s => s.UserId == userId);
+            return $"↩️ Removed <b>{StateNames[lastEntry.State]}</b> ({lastEntry.State}). Your count: {myCount}/{myTarget}.";
+        }
+        else
+        {
+            if (sightings.Count == 0)
+                return "Nothing to undo — no states logged yet.";
 
-        var target = 51 - skipped.Count;
-        return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/{target}.";
+            var removed = sightings[^1];
+            sightings.RemoveAt(sightings.Count - 1);
+            state.SeenStatesJson = _stateService.SerializeSightings(sightings);
+            await _stateService.SaveAsync(state);
+
+            var target = 51 - skipped.Count;
+            return $"↩️ Removed <b>{StateNames[removed.State]}</b> ({removed.State}). Back to {sightings.Count}/{target}.";
+        }
     }
 
     private async Task<string?> HandleHistory(long chatId)
@@ -442,19 +764,35 @@ public class BotCommandHandler
             var tripTarget = 51 - skipped.Count;
             var date = t.StartedAt.ToString("MMM d, yyyy");
             var name = System.Net.WebUtility.HtmlEncode(t.TripName);
-            var topSpotter = sightings
-                .Where(s => s.UserId != 0)
-                .GroupBy(s => s.UserId)
-                .OrderByDescending(g => g.Count())
-                .Select(g => g.Select(s => s.UserName).FirstOrDefault(userName => !string.IsNullOrEmpty(userName)) ?? "Unknown")
-                .FirstOrDefault();
-            var mvp = topSpotter is not null ? $"🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "—";
-            var skippedNote = skipped.Count > 0 ? string.Join(", ", skipped.OrderBy(s => s)) : "—";
-            return $"<tr><td>{i + 1}</td><td>{name}</td><td>{date}</td><td>{sightings.Count}/{tripTarget}</td><td>{mvp}</td><td>{skippedNote}</td></tr>";
+
+            string scoreCell, mvpCell, skippedCell;
+
+            if (t.RaceMode)
+            {
+                var finishers = _stateService.DeserializeFinishers(t.FinishersJson);
+                scoreCell = finishers.Count == 1 ? "1 finisher" : $"{finishers.Count} finishers";
+                var winner = finishers.FirstOrDefault();
+                mvpCell = winner is not null ? $"🏆 {System.Net.WebUtility.HtmlEncode(winner.UserName is { Length: > 0 } n ? n : "Unknown")}" : "—";
+                skippedCell = "Race Mode";
+            }
+            else
+            {
+                scoreCell = $"{sightings.Count}/{tripTarget}";
+                var topSpotter = sightings
+                    .Where(s => s.UserId != 0)
+                    .GroupBy(s => s.UserId)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Select(s => s.UserName).FirstOrDefault(userName => !string.IsNullOrEmpty(userName)) ?? "Unknown")
+                    .FirstOrDefault();
+                mvpCell = topSpotter is not null ? $"🏆 {System.Net.WebUtility.HtmlEncode(topSpotter)}" : "—";
+                skippedCell = skipped.Count > 0 ? string.Join(", ", skipped.OrderBy(s => s)) : "—";
+            }
+
+            return $"<tr><td>{i + 1}</td><td>{name}</td><td>{date}</td><td>{scoreCell}</td><td>{mvpCell}</td><td>{skippedCell}</td></tr>";
         });
 
         var html = "<h2>📋 Trip History</h2><table>" +
-                   "<tr><th>#</th><th>Trip</th><th>Date</th><th>Score</th><th>MVP</th><th>Skipped</th></tr>" +
+                   "<tr><th>#</th><th>Trip</th><th>Date</th><th>Score</th><th>MVP/Winner</th><th>Skipped</th></tr>" +
                    string.Join("", rows) +
                    "</table>";
 
@@ -470,7 +808,8 @@ public class BotCommandHandler
                    "<li><code>/status</code> — see your progress</li>" +
                    "<li><code>/missing</code> — see what's left</li>" +
                    "<li><code>/undo</code> — remove the last logged state</li>" +
-                   "<li><code>/newtrip [name]</code> — start a fresh trip</li>" +
+                   "<li><code>/newtrip [name]</code> — start a fresh collaborative trip</li>" +
+                   "<li><code>/newrace [name]</code> — start a race where each player collects all 51 states independently; first to finish wins!</li>" +
                    "<li><code>/history</code> — view results from previous trips</li>" +
                    "<li><code>/help</code> — show this message</li>" +
                    "</ul>";

@@ -38,7 +38,7 @@ public class TripStateService
         await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace);
     }
 
-    public async Task ResetAsync(long chatId, string tripName)
+    public async Task ResetAsync(long chatId, string tripName, bool raceMode = false)
     {
         // Archive current trip if it has any states logged or any states skipped
         try
@@ -56,7 +56,10 @@ public class TripStateService
                     SeenStatesJson = existing.SeenStatesJson,
                     SkippedStatesJson = existing.SkippedStatesJson,
                     StartedAt = existing.StartedAt,
-                    EndedAt = DateTimeOffset.UtcNow
+                    EndedAt = DateTimeOffset.UtcNow,
+                    RaceMode = existing.RaceMode,
+                    FinishersJson = existing.FinishersJson,
+                    RaceSkipsJson = existing.RaceSkipsJson,
                 };
                 await _tableClient.UpsertEntityAsync(archived, TableUpdateMode.Replace);
             }
@@ -68,7 +71,8 @@ public class TripStateService
             PartitionKey = chatId.ToString(),
             TripName = tripName,
             SeenStatesJson = "[]",
-            StartedAt = DateTimeOffset.UtcNow
+            StartedAt = DateTimeOffset.UtcNow,
+            RaceMode = raceMode,
         };
         await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace);
     }
@@ -134,4 +138,36 @@ public class TripStateService
 
     public string SerializeSkippedStates(List<string> states) =>
         JsonSerializer.Serialize(states);
+
+    public List<RaceFinisher> DeserializeFinishers(string? json)
+    {
+        if (string.IsNullOrEmpty(json) || json == "[]") return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<RaceFinisher>>(json) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public string SerializeFinishers(List<RaceFinisher> finishers) =>
+        JsonSerializer.Serialize(finishers);
+
+    public Dictionary<long, List<string>> DeserializeRaceSkips(string? json)
+    {
+        if (string.IsNullOrEmpty(json) || json == "{}") return new();
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<long, List<string>>>(json) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    public string SerializeRaceSkips(Dictionary<long, List<string>> raceSkips) =>
+        JsonSerializer.Serialize(raceSkips);
 }
