@@ -10,7 +10,7 @@ All players in the chat share one list of seen states and work together to colle
 ### Race Mode 🏁
 Each player builds their own independent collection of all 51 plates. The first player to finish wins, with 2nd and 3rd place announcements as others complete their sets. Races can span weeks — the bot tracks progress across sessions so there's no pressure to finish in one sitting.
 
-Start a race with `/newrace [name]`. Before logging your first plate, you can `/skip` states that are unlikely to appear (e.g. HI or AK on a continental trip). Once you log your first sighting, skips are locked in.
+Start a race with `/newrace [name]`. Before the first plate is logged by anyone, any player can `/skip` states that are unlikely to appear (e.g. HI or AK on a continental trip) — skips apply to everyone's target. Once any player logs their first sighting, skips are locked for everyone.
 
 ## Features
 
@@ -285,7 +285,7 @@ To find your Telegram user ID, message [@userinfobot](https://t.me/userinfobot).
 | Command | Description | Example |
 |---|---|---|
 | `/saw [state]` | Log a state you spotted by abbreviation or full name (including DC); in collaborative mode credits the first spotter; in race mode tracks your personal count and announces when you finish | `/saw CA` or `/saw California` or `/saw DC` |
-| `/skip [state]` | Remove a state from the required list; in collaborative mode affects the whole group; in race mode is per-player and only allowed before your first sighting | `/skip HI` or `/skip Hawaii` |
+| `/skip [state]` | Remove a state from the required list; affects the whole group in both modes; in race mode only allowed before any player logs their first sighting | `/skip HI` or `/skip Hawaii` |
 | `/status` | Show progress; in collaborative mode shows group progress and leaderboard; in race mode shows a standings table with each player's count and finish placement | `/status` |
 | `/missing` | List states not yet found; in race mode shows your personal missing states | `/missing` |
 | `/undo` | Remove your last logged state; in race mode removes you from the finisher ledger if you had finished | `/undo` |

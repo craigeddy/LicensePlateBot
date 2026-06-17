@@ -228,45 +228,38 @@ public class BotCommandHandler
             if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase) && s.UserId == userId))
             {
                 var myCount = sightings.Count(s => s.UserId == userId && AllStates.Contains(s.State));
-                var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
-                var mySkipCount = raceSkips.TryGetValue(userId, out var mySkips) ? mySkips.Count : 0;
-                var myTarget = AllStates.Count - mySkipCount;
+                var sharedSkipsForDup = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+                var myTarget = AllStates.Count - sharedSkipsForDup.Count;
                 return $"👀 You already logged <b>{StateNames[abbr]}</b> ({abbr})! Your count: {myCount}/{myTarget}.";
             }
 
-            // Auto-unskip from this player's personal skip list if they log a skipped state
-            var raceSkipsAll = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            // Auto-unskip from the shared skip list if someone logs a skipped state
+            var sharedSkippedAll = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
             var wasRaceSkipped = false;
-            if (raceSkipsAll.TryGetValue(userId, out var playerSkips))
+            var skippedRaceEntry = sharedSkippedAll.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
+            if (skippedRaceEntry is not null)
             {
-                var skippedEntry = playerSkips.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
-                if (skippedEntry is not null)
-                {
-                    playerSkips.Remove(skippedEntry);
-                    raceSkipsAll[userId] = playerSkips;
-                    state.RaceSkipsJson = _stateService.SerializeRaceSkips(raceSkipsAll);
-                    wasRaceSkipped = true;
-                }
+                sharedSkippedAll.Remove(skippedRaceEntry);
+                state.SkippedStatesJson = _stateService.SerializeSkippedStates(sharedSkippedAll);
+                wasRaceSkipped = true;
             }
 
             sightings.Add(new SightingRecord(abbr, userId, displayName));
             state.SeenStatesJson = _stateService.SerializeSightings(sightings);
             await _stateService.SaveAsync(state);
 
-            // Recompute per-player target and count
-            var currentRaceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
-            var currentPlayerSkips = currentRaceSkips.TryGetValue(userId, out var ps) ? ps : [];
-            var myTarget2 = AllStates.Count - currentPlayerSkips.Count;
+            var sharedSkipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+            var myTarget2 = AllStates.Count - sharedSkipped.Count;
             var myStates = sightings
                 .Where(s => s.UserId == userId)
                 .Select(s => s.State)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var myCount2 = myStates.Count;
             var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
-            var unskipNote = wasRaceSkipped ? " (removed from your skip list)" : "";
+            var unskipNote = wasRaceSkipped ? " (removed from skip list)" : "";
 
             // Check if this player has finished
-            var requiredStates = AllStates.Where(s => !currentPlayerSkips.Contains(s, StringComparer.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var requiredStates = AllStates.Where(s => !sharedSkipped.Contains(s, StringComparer.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
             if (requiredStates.IsSubsetOf(myStates))
             {
                 await HandleRaceFinisher(chatId, state, sightings, from, displayName);
@@ -342,35 +335,27 @@ public class BotCommandHandler
 
         if (state.RaceMode)
         {
-            if (from is null)
-                return "⚠️ Can't skip a state in race mode — your Telegram identity couldn't be determined.";
+            // Lock skips once any plate has been logged
+            if (sightings.Count > 0)
+                return "⚠️ Skips are locked once the race has started (first plate has been logged).";
 
-            var userId = from.Id;
+            var sharedSkipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
-            // Lock skips once the player has logged their first state
-            if (sightings.Any(s => s.UserId == userId))
-                return "⚠️ You can only skip states before logging your first plate in a race.";
+            if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+                return $"❓ <b>{StateNames[abbr]}</b> ({abbr}) has already been spotted — can't skip a state that's been found.";
 
-            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
-            if (!raceSkips.TryGetValue(userId, out var playerSkips))
-                playerSkips = [];
+            if (sharedSkipped.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+                return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on the skip list.";
 
-            if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase) && s.UserId == userId))
-                return $"❓ You've already spotted <b>{StateNames[abbr]}</b> ({abbr}) — can't skip a state you've already found.";
-
-            if (playerSkips.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
-                return $"ℹ️ <b>{StateNames[abbr]}</b> ({abbr}) is already on your skip list.";
-
-            if (playerSkips.Count >= 50)
+            if (sharedSkipped.Count >= 50)
                 return "⚠️ You must keep at least one state required to complete the race.";
 
-            playerSkips.Add(abbr);
-            raceSkips[userId] = playerSkips;
-            state.RaceSkipsJson = _stateService.SerializeRaceSkips(raceSkips);
+            sharedSkipped.Add(abbr);
+            state.SkippedStatesJson = _stateService.SerializeSkippedStates(sharedSkipped);
             await _stateService.SaveAsync(state);
 
-            var myTarget = AllStates.Count - playerSkips.Count;
-            return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) skipped. You now need {myTarget} plates to win the race.";
+            var target = AllStates.Count - sharedSkipped.Count;
+            return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) skipped for everyone. You now need {target} plates to win the race.";
         }
         else
         {
@@ -418,8 +403,7 @@ public class BotCommandHandler
         if (placement == 1)
         {
             // Load this player's states for the found list
-            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
-            var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
+            var playerSkips = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
             var myStates = sightings
                 .Where(s => s.UserId == userId)
                 .Select(s => s.State)
@@ -554,10 +538,11 @@ public class BotCommandHandler
         if (state.RaceMode)
         {
             var finishers = _stateService.DeserializeFinishers(state.FinishersJson);
-            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
+            var sharedSkipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+            var sharedTarget = AllStates.Count - sharedSkipped.Count;
 
             if (sightings.Count == 0 && finishers.Count == 0)
-                return "No plates logged yet! Use /saw CA to log your first one. You can /skip states before your first plate.";
+                return "No plates logged yet! Use /saw CA to log your first one. You can /skip states before the first plate is logged.";
 
             // Build per-player standings
             var playerGroups = sightings
@@ -568,9 +553,7 @@ public class BotCommandHandler
                     var name = g.Select(s => s.UserName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? "Unknown";
                     var count = g.Count(s => AllStates.Contains(s.State));
                     var finisher = finishers.FirstOrDefault(f => f.UserId == g.Key);
-                    var playerSkips = raceSkips.TryGetValue(g.Key, out var ps) ? ps : [];
-                    var target = AllStates.Count - playerSkips.Count;
-                    return (UserId: g.Key, Name: name, Count: count, Target: target, Finisher: finisher);
+                    return (UserId: g.Key, Name: name, Count: count, Target: sharedTarget, Finisher: finisher);
                 })
                 .OrderBy(p => p.Finisher is null ? 1 : 0)
                 .ThenBy(p => p.Finisher?.FinishedAt)
@@ -605,6 +588,9 @@ public class BotCommandHandler
             {
                 html += "<p>No plates logged yet — use /saw CA to start!</p>";
             }
+
+            if (sharedSkipped.Count > 0)
+                html += $"<p><b>Skipped by all:</b> {string.Join(", ", sharedSkipped.OrderBy(s => s))}</p>";
 
             await SendRichHtmlAsync(chatId, html);
             return null;
@@ -666,22 +652,21 @@ public class BotCommandHandler
                 return "⚠️ Can't check missing states in race mode — your Telegram identity couldn't be determined.";
 
             var userId = from.Id;
-            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
-            var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
+            var sharedSkipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
             var mySeenStates = sightings
                 .Where(s => s.UserId == userId)
                 .Select(s => s.State)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var missing = AllStates
-                .Where(s => !mySeenStates.Contains(s) && !playerSkips.Contains(s, StringComparer.OrdinalIgnoreCase))
+                .Where(s => !mySeenStates.Contains(s) && !sharedSkipped.Contains(s, StringComparer.OrdinalIgnoreCase))
                 .OrderBy(s => s)
                 .ToList();
 
             if (missing.Count == 0)
                 return "🎉 You've found all your required plates! Nothing missing!";
 
-            var myTarget = AllStates.Count - playerSkips.Count;
+            var myTarget = AllStates.Count - sharedSkipped.Count;
             var list = string.Join(", ", missing);
             return $"🔍 <b>Your {missing.Count} missing states ({mySeenStates.Count}/{myTarget}):</b>\n{list}";
         }
@@ -736,9 +721,8 @@ public class BotCommandHandler
 
             await _stateService.SaveAsync(state);
 
-            var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
-            var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
-            var myTarget = AllStates.Count - playerSkips.Count;
+            var sharedSkipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+            var myTarget = AllStates.Count - sharedSkipped.Count;
             var myCount = sightings.Count(s => s.UserId == userId);
             return $"↩️ Removed <b>{StateNames[lastEntry.State]}</b> ({lastEntry.State}). Your count: {myCount}/{myTarget}.";
         }
