@@ -46,7 +46,8 @@ public class TripStateService
             var response = await _tableClient.GetEntityAsync<TripState>(chatId.ToString(), "currentTrip");
             var existing = response.Value;
             if (DeserializeSightings(existing.SeenStatesJson).Count > 0 ||
-                DeserializeSkippedStates(existing.SkippedStatesJson).Count > 0)
+                DeserializeSkippedStates(existing.SkippedStatesJson).Count > 0 ||
+                DeserializeRaceSkips(existing.RaceSkipsJson).Count > 0)
             {
                 var archived = new TripState
                 {

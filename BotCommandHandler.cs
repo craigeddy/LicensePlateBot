@@ -221,6 +221,9 @@ public class BotCommandHandler
 
         if (state.RaceMode)
         {
+            if (from is null)
+                return "⚠️ Can't log a plate in race mode — your Telegram identity couldn't be determined.";
+
             // Per-player duplicate check
             if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase) && s.UserId == userId))
             {
@@ -339,7 +342,10 @@ public class BotCommandHandler
 
         if (state.RaceMode)
         {
-            var userId = from?.Id ?? 0;
+            if (from is null)
+                return "⚠️ Can't skip a state in race mode — your Telegram identity couldn't be determined.";
+
+            var userId = from.Id;
 
             // Lock skips once the player has logged their first state
             if (sightings.Any(s => s.UserId == userId))
@@ -402,13 +408,7 @@ public class BotCommandHandler
         await _stateService.SaveAsync(state);
 
         var placement = finishers.Count;
-        var placementText = placement switch
-        {
-            1 => "1st",
-            2 => "2nd",
-            3 => "3rd",
-            _ => $"{placement}th"
-        };
+        var placementText = Ordinal(placement);
 
         var duration = DateTimeOffset.UtcNow - state.StartedAt;
         var durationText = FormatDuration(duration);
@@ -662,7 +662,10 @@ public class BotCommandHandler
 
         if (state.RaceMode)
         {
-            var userId = from?.Id ?? 0;
+            if (from is null)
+                return "⚠️ Can't check missing states in race mode — your Telegram identity couldn't be determined.";
+
+            var userId = from.Id;
             var raceSkips = _stateService.DeserializeRaceSkips(state.RaceSkipsJson);
             var playerSkips = raceSkips.TryGetValue(userId, out var ps) ? ps : [];
             var mySeenStates = sightings
@@ -708,8 +711,11 @@ public class BotCommandHandler
         var sightings = _stateService.DeserializeSightings(state.SeenStatesJson);
         var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
 
-        if (state.RaceMode && from is not null)
+        if (state.RaceMode)
         {
+            if (from is null)
+                return "⚠️ Can't undo in race mode — your Telegram identity couldn't be determined.";
+
             var userId = from.Id;
             var myEntries = sightings
                 .Select((s, i) => (s, i))
@@ -816,6 +822,13 @@ public class BotCommandHandler
 
         await SendRichHtmlAsync(chatId, html);
         return null;
+    }
+
+    private static string Ordinal(int n)
+    {
+        var lastTwo = n % 100;
+        if (lastTwo >= 11 && lastTwo <= 13) return $"{n}th";
+        return (n % 10) switch { 1 => $"{n}st", 2 => $"{n}nd", 3 => $"{n}rd", _ => $"{n}th" };
     }
 
     private static string BuildProgressBar(int current, int total)
