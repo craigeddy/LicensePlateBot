@@ -5,6 +5,8 @@ namespace LicensePlateBot.Models;
 
 public record SightingRecord(string State, long UserId, string UserName);
 
+public record RaceFinisher(long UserId, string UserName, DateTimeOffset FinishedAt);
+
 public class TripState : ITableEntity
 {
     // PartitionKey = chat ID, RowKey = "currentTrip" for active trip or "trip_<yyyyMMddHHmmss>" for archived trips
@@ -18,5 +20,10 @@ public class TripState : ITableEntity
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? PendingCommand { get; set; }  // conversational state, e.g. "saw"
     public DateTimeOffset? EndedAt { get; set; }  // set when trip is archived
-    public string SkippedStatesJson { get; set; } = "[]";  // JSON array of skipped state abbreviations
+    public string SkippedStatesJson { get; set; } = "[]";  // JSON array of skipped state abbreviations (collaborative mode)
+
+    // Race mode fields
+    public bool RaceMode { get; set; } = false;
+    public string FinishersJson { get; set; } = "[]";    // JSON array of RaceFinisher records
+    public string RaceSkipsJson { get; set; } = "{}";   // JSON: Dictionary<long, List<string>> — per-player skip lists
 }
