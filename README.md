@@ -14,7 +14,7 @@ Start a race with `/newrace [name]`. Before the first plate is logged by anyone,
 
 ## Features
 
-- `/saw CA` or `/saw California` or `/saw DC` — log a state you spotted; in collaborative mode the bot credits the first spotter; in race mode it tracks your personal collection and announces when you finish
+- `/saw CA` or `/saw California` or `/saw DC` — log a state you spotted; in collaborative mode the bot credits the first spotter; in race mode it tracks your personal collection and announces when you finish; spotting a skipped state doesn't count and doesn't remove it from the skip list
 - `/skip HI` — in collaborative mode, removes a state from the group's required list; in race mode, removes it from your personal required list (only available before your first sighting)
 - `/status` — in collaborative mode, shows group progress and a per-player leaderboard; in race mode, shows a race standings table with each player's count and finish placement
 - `/missing` — shows which states you still need (collaborative: shared list; race: your personal list)
