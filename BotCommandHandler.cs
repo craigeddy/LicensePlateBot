@@ -219,6 +219,10 @@ public class BotCommandHandler
         var displayName = DisplayName(from);
         var userId = from?.Id ?? 0;
 
+        var skippedStates = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
+        if (skippedStates.Any(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase)))
+            return $"⏭️ <b>{StateNames[abbr]}</b> ({abbr}) was skipped and doesn't count toward your total.";
+
         if (state.RaceMode)
         {
             if (from is null)
@@ -228,82 +232,59 @@ public class BotCommandHandler
             if (sightings.Any(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase) && s.UserId == userId))
             {
                 var myCount = sightings.Count(s => s.UserId == userId && AllStates.Contains(s.State));
-                var sharedSkipsForDup = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
-                var myTarget = AllStates.Count - sharedSkipsForDup.Count;
+                var myTarget = AllStates.Count - skippedStates.Count;
                 return $"👀 You already logged <b>{StateNames[abbr]}</b> ({abbr})! Your count: {myCount}/{myTarget}.";
-            }
-
-            // Auto-unskip from the shared skip list if someone logs a skipped state
-            var sharedSkippedAll = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
-            var wasRaceSkipped = false;
-            var skippedRaceEntry = sharedSkippedAll.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
-            if (skippedRaceEntry is not null)
-            {
-                sharedSkippedAll.Remove(skippedRaceEntry);
-                state.SkippedStatesJson = _stateService.SerializeSkippedStates(sharedSkippedAll);
-                wasRaceSkipped = true;
             }
 
             sightings.Add(new SightingRecord(abbr, userId, displayName));
             state.SeenStatesJson = _stateService.SerializeSightings(sightings);
             await _stateService.SaveAsync(state);
 
-            var sharedSkipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
-            var myTarget2 = AllStates.Count - sharedSkipped.Count;
+            var myTarget2 = AllStates.Count - skippedStates.Count;
             var myStates = sightings
                 .Where(s => s.UserId == userId)
                 .Select(s => s.State)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var myCount2 = myStates.Count;
             var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
-            var unskipNote = wasRaceSkipped ? " (removed from skip list)" : "";
 
             // Check if this player has finished
-            var requiredStates = AllStates.Where(s => !sharedSkipped.Contains(s, StringComparer.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var requiredStates = AllStates.Where(s => !skippedStates.Contains(s, StringComparer.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
             if (requiredStates.IsSubsetOf(myStates))
             {
                 await HandleRaceFinisher(chatId, state, sightings, from, displayName);
-                return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n🏁 <b>{myCount2}/{myTarget2} — YOU FINISHED!</b> 🎆";
+                return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n🏁 <b>{myCount2}/{myTarget2} — YOU FINISHED!</b> 🎆";
             }
 
             var remaining = myTarget2 - myCount2;
-            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\nYour count: {myCount2}/{myTarget2} — {remaining} to go.";
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\nYour count: {myCount2}/{myTarget2} — {remaining} to go.";
         }
         else
         {
             // Collaborative mode
-            var skipped = _stateService.DeserializeSkippedStates(state.SkippedStatesJson);
-
             var existing = sightings.FirstOrDefault(s => s.State.Equals(abbr, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
             {
                 var spotter = existing.UserName is { Length: > 0 } name ? $" — spotted by {System.Net.WebUtility.HtmlEncode(name)}" : "";
-                var currentTarget = 51 - skipped.Count;
+                var currentTarget = 51 - skippedStates.Count;
                 return $"👀 Already got <b>{StateNames[abbr]}</b> ({abbr}){spotter}! That's {sightings.Count}/{currentTarget}.";
             }
 
-            // If the state was skipped, automatically un-skip it when the player logs it
-            var skippedEntry = skipped.FirstOrDefault(s => s.Equals(abbr, StringComparison.OrdinalIgnoreCase));
-            var wasSkipped = skippedEntry is not null;
-            if (wasSkipped) skipped.Remove(skippedEntry!);
-
             sightings.Add(new SightingRecord(abbr, userId, displayName));
             state.SeenStatesJson = _stateService.SerializeSightings(sightings);
-            state.SkippedStatesJson = _stateService.SerializeSkippedStates(skipped);
             await _stateService.SaveAsync(state);
 
-            var target = 51 - skipped.Count;
+            var target = 51 - skippedStates.Count;
             var remaining = target - sightings.Count;
             var credit = displayName is { Length: > 0 } ? $" by {System.Net.WebUtility.HtmlEncode(displayName)}" : "";
-            var unskipNote = wasSkipped ? " (removed from skip list)" : "";
 
             if (sightings.Count == target)
             {
-                await SendAllStatesFoundCelebrationAsync(chatId, state, sightings, skipped);
-                return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n🏁 <b>{target}/{target} — COMPLETE!</b> 🎆";
+                await SendAllStatesFoundCelebrationAsync(chatId, state, sightings, skippedStates);
+                return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n🏁 <b>{target}/{target} — COMPLETE!</b> 🎆";
             }
 
-            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!{unskipNote}\n{sightings.Count}/{target} plates found — {remaining} to go.";
+            return $"✅ <b>{StateNames[abbr]}</b> ({abbr}) spotted{credit}!\n{sightings.Count}/{target} plates found — {remaining} to go.";
         }
     }
 
